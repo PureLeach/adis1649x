@@ -463,26 +463,53 @@ class ADIS_16490:
                 self.za_bias_32 = self._check(self.za_bias_32, 32)  
                 return self.za_bias_32 * 0.5 / 65536
 
+    # Miscellaneous Configuration
+    @property
+    def config(self):
+        self._select_page(0x03)
+        self._config = self._get(_CONFIG)
+        return f'{self._config:08b}'
+
+
+
+    @config.setter
+    def config(self, value):
+        if not isinstance(value, int):
+            raise Exception("Тип config должен быть int")
+        self._select_page(0x03)
+        self._set(_CONFIG, value)
+        self._set(_CONFIG + 1, 0x00)
+
+
+
+    # @property
+    # def burst_read:
+    #     pass
 # x = SensorValue._value
 # print(x)
 sensor = ADIS_16490()  # Создание экземпляра класса
-sensor.decrate = 3
+sensor.config = 0b11000000
+x = sensor.config
+print(x)
+
+
+
 # x = sensor.decrate
 # print(x)
 # n = 0
 
-sensor.bias_set(SensorType.gyro, Axis.x, 5)
-sensor.bias_set(SensorType.gyro, Axis.y, -98)
+# sensor.bias_set(SensorType.gyro, Axis.x, 5)
+# sensor.bias_set(SensorType.gyro, Axis.y, -98)
 
 
 
 # print(sensor.z_accl)
-# # Вывод параметров в консоль
-while True:
-    y = sensor.bias_get(SensorType.gyro, Axis.x)
-    print(y)
-    z = sensor.bias_get(SensorType.gyro, Axis.y)
-    print(z)
+# # # Вывод параметров в консоль
+# while True:
+#     y = sensor.bias_get(SensorType.gyro, Axis.x)
+#     print(y)
+#     z = sensor.bias_get(SensorType.gyro, Axis.y)
+#     print(z)
 #     n += 100
 #     print(sensor.temp)
 #     print(sensor.decrate)
@@ -493,4 +520,4 @@ while True:
 #     print(sensor.y_gyro)
 #     print(sensor.z_gyro)
 #     sensor.decrate = n
-    time.sleep(1)
+    # time.sleep(1)
