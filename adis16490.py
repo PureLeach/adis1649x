@@ -469,6 +469,7 @@ class ADIS_16490:
         self._select_page(0x03)
         self._config = self._get(_CONFIG)
         return f'{self._config:08b}'
+
     @config.setter
     def config(self, value):
         if not isinstance(value, int):
@@ -524,19 +525,120 @@ class ADIS_16490:
         self._set(_CONFIG, 0x00)
         self._set(_CONFIG + 1, 0x00)
 
-    # @property
-    # def burst_read:
-    #     pass
+    # Считывание всех параметров
+    @property
+    def burst_read(self):
+        self._select_page(0x00)
+        self._data_cnt = self._get(_DATA_CNT)
+        self._sys_e_flag = hex(self._get(_SYS_E_FLAG))
+        self._diag_sts = self._get(_DIAG_STS)
+        self._temp = self.temp
+        self._x_gyro = self.x_gyro
+        self._y_gyro = self.y_gyro
+        self._z_gyro = self.z_gyro
+        self._x_accl = self.x_accl
+        self._y_accl = self.y_accl
+        self._z_accl = self.z_accl
+        self._time_stamp = self._get(_TIME_STAMP)
+        self._prod_id = self._get(_PROD_ID)
+
+        self._select_page(0x02)
+        self._x_gyro_scale = self.scale_get(SensorType.gyro, Axis.x)
+        self._y_gyro_scale = self.scale_get(SensorType.gyro, Axis.y)
+        self._z_gyro_scale = self.scale_get(SensorType.gyro, Axis.z)
+        self._x_accl_scale = self.scale_get(SensorType.accl, Axis.x)
+        self._y_accl_scale = self.scale_get(SensorType.accl, Axis.y)
+        self._z_accl_scale = self.scale_get(SensorType.accl, Axis.z)
+        self._x_gyro_bias = self.bias_get(SensorType.gyro, Axis.x)
+        self._y_gyro_bias = self.bias_get(SensorType.gyro, Axis.y)
+        self._z_gyro_bias = self.bias_get(SensorType.gyro, Axis.z)
+        self._x_accl_bias = self.bias_get(SensorType.accl, Axis.x)
+        self._y_accl_bias = self.bias_get(SensorType.accl, Axis.y)
+        self._z_accl_bias = self.bias_get(SensorType.accl, Axis.z)
+
+        self._select_page(0x03)
+        self._glob_cmd = hex(self._get(_GLOB_CMD))
+        self._fnctio_ctrl = hex(self._get(_FNCTIO_CTRL))
+        self._gpio_ctrl = hex(self._get(_GPIO_CTRL))
+        self._config = f'{self._get(_CONFIG)}'
+        self._decrate = self._get(_DEC_RATE)
+        self._null_cnfg = self._get(_NULL_CNFG)
+
+        self._select_page(0x04)
+        self._serial_num = self._get(_SERIAL_NUM)
+        
+        self._select_page(0x05)
+        self._fir_coef_A000 = hex(self._get(0x08))
+        self._fir_coef_A001 = hex(self._get(0x0A))
+        self._fir_coef_A002 = hex(self._get(0x0C))
+        self._fir_coef_A059 = hex(self._get(0x7E))
+        
+        self._select_page(0x06)
+        self._fir_coef_A060 = hex(self._get(0x08))
+        self._fir_coef_A061 = hex(self._get(0x0A))
+        self._fir_coef_A062 = hex(self._get(0x0C))
+        self._fir_coef_A119 = hex(self._get(0x7E))
+        
+        self._select_page(0x07)
+        self._fir_coef_B000 = hex(self._get(0x08))
+        self._fir_coef_B001 = hex(self._get(0x0A))
+        self._fir_coef_B002 = hex(self._get(0x0C))
+        self._fir_coef_B059 = hex(self._get(0x7E))
+
+        self._select_page(0x08)
+        self._fir_coef_B060 = hex(self._get(0x08))
+        self._fir_coef_B061 = hex(self._get(0x0A))
+        self._fir_coef_B062 = hex(self._get(0x0C))
+        self._fir_coef_B119 = hex(self._get(0x7E))
+        
+        self._select_page(0x09)
+        self._fir_coef_C000 = hex(self._get(0x08))
+        self._fir_coef_C001 = hex(self._get(0x0A))
+        self._fir_coef_C002 = hex(self._get(0x0C))
+        self._fir_coef_C059 = hex(self._get(0x7E))
+
+        self._select_page(0x0A)
+        self._fir_coef_C060 = hex(self._get(0x08))
+        self._fir_coef_C061 = hex(self._get(0x0A))
+        self._fir_coef_C062 = hex(self._get(0x0C))
+        self._fir_coef_C119 = hex(self._get(0x7E))
+
+        self._select_page(0x0B)
+        self._fir_coef_D000 = hex(self._get(0x08))
+        self._fir_coef_D001 = hex(self._get(0x0A))
+        self._fir_coef_D002 = hex(self._get(0x0C))
+        self._fir_coef_D059 = hex(self._get(0x7E))
+
+        self._select_page(0x0C)
+        self._fir_coef_D060 = hex(self._get(0x08))
+        self._fir_coef_D061 = hex(self._get(0x0A))
+        self._fir_coef_D062 = hex(self._get(0x0C))
+        self._fir_coef_D119 = hex(self._get(0x7E))
+
+        dic = [[self._prod_id, self._serial_num, self._decrate, self._config, self._x_gyro_bias,
+            self._y_gyro_bias, self._z_gyro_bias, self._x_gyro_scale, self._y_gyro_scale, self._z_gyro_scale],
+           [self._fir_coef_A000, self._fir_coef_A001, self._fir_coef_A002, self._fir_coef_A059,
+            self._fir_coef_A060, self._fir_coef_A061, self._fir_coef_A062, self._fir_coef_A119],
+           [self._fir_coef_B000, self._fir_coef_B001, self._fir_coef_B002, self._fir_coef_B059,
+            self._fir_coef_B060, self._fir_coef_B061, self._fir_coef_B062, self._fir_coef_B119],
+           [self._fir_coef_C000, self._fir_coef_C001, self._fir_coef_C002, self._fir_coef_C059,
+               self._fir_coef_C060, self._fir_coef_C061, self._fir_coef_C062, self._fir_coef_C119],
+           [self._fir_coef_D000, self._fir_coef_D001, self._fir_coef_D002, self._fir_coef_D059,
+            self._fir_coef_D060, self._fir_coef_D061, self._fir_coef_D062, self._fir_coef_D119]]
+        return dic
+
+
 
 # x = SensorValue._value
 # print(x)
 sensor = ADIS_16490()  # Создание экземпляра класса
-sensor.config = 0b11000000
-x = sensor.config
+x = sensor.burst_read
+# sensor.config = 0b11000000
+# x = sensor.config
 print(x)
-sensor.reset
-x = sensor.config
-print(x)
+# sensor.reset
+# x = sensor.config
+# print(x)
 
 # x = sensor.decrate
 # print(x)
