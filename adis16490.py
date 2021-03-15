@@ -469,9 +469,6 @@ class ADIS_16490:
         self._select_page(0x03)
         self._config = self._get(_CONFIG)
         return f'{self._config:08b}'
-
-
-
     @config.setter
     def config(self, value):
         if not isinstance(value, int):
@@ -481,18 +478,65 @@ class ADIS_16490:
         self._set(_CONFIG + 1, 0x00)
 
 
+    # Cброс всех параметров
+    @property
+    def reset(self):
+        self._select_page(0x02)
+        self._set(_X_GYRO_SCALE, 0x00)
+        self._set(_X_GYRO_SCALE + 1, 0x00)
+        self._set(_X_ACCL_SCALE, 0x00)
+        self._set(_X_ACCL_SCALE + 1, 0x00)
+        self._set(_Y_GYRO_SCALE, 0x00)
+        self._set(_Y_GYRO_SCALE + 1, 0x00)
+        self._set(_Y_ACCL_SCALE, 0x00)
+        self._set(_Y_ACCL_SCALE + 1, 0x00)
+        self._set(_Z_GYRO_SCALE, 0x00)
+        self._set(_Z_GYRO_SCALE + 1, 0x00)
+        self._set(_Z_ACCL_SCALE, 0x00)
+        self._set(_Z_ACCL_SCALE + 1, 0x00)
+        self._set(_XG_BIAS_LOW, 0x00)
+        self._set(_XG_BIAS_LOW + 1, 0x00)
+        self._set(_XG_BIAS_HIGH, 0x00)
+        self._set(_XG_BIAS_HIGH + 1, 0x00)
+        self._set(_YG_BIAS_LOW, 0x00)
+        self._set(_YG_BIAS_LOW + 1, 0x00)
+        self._set(_YG_BIAS_HIGH, 0x00)
+        self._set(_YG_BIAS_HIGH + 1, 0x00)
+        self._set(_ZG_BIAS_LOW, 0x00)
+        self._set(_ZG_BIAS_LOW + 1, 0x00)
+        self._set(_ZG_BIAS_HIGH, 0x00)
+        self._set(_ZG_BIAS_HIGH + 1, 0x00)
+        self._set(_XA_BIAS_LOW, 0x00)
+        self._set(_XA_BIAS_LOW + 1, 0x00)
+        self._set(_XA_BIAS_HIGH, 0x00)
+        self._set(_XA_BIAS_HIGH + 1, 0x00)
+        self._set(_YA_BIAS_LOW, 0x00)
+        self._set(_YA_BIAS_LOW + 1, 0x00)
+        self._set(_YA_BIAS_HIGH, 0x00)
+        self._set(_YA_BIAS_HIGH + 1, 0x00)
+        self._set(_ZA_BIAS_LOW, 0x00)
+        self._set(_ZA_BIAS_LOW + 1, 0x00)
+        self._set(_ZA_BIAS_HIGH, 0x00)
+        self._set(_ZA_BIAS_HIGH + 1, 0x00)
+        self._select_page(0x03)
+        self._set(_DEC_RATE, 0x00)
+        self._set(_DEC_RATE + 1, 0x00)
+        self._set(_CONFIG, 0x00)
+        self._set(_CONFIG + 1, 0x00)
 
     # @property
     # def burst_read:
     #     pass
+
 # x = SensorValue._value
 # print(x)
 sensor = ADIS_16490()  # Создание экземпляра класса
 sensor.config = 0b11000000
 x = sensor.config
 print(x)
-
-
+sensor.reset
+x = sensor.config
+print(x)
 
 # x = sensor.decrate
 # print(x)
