@@ -280,7 +280,7 @@ class ADIS_16490:
             self.z_accl_32, 32)  # Проверим число на знак
         return self.z_accl_32 * 0.5 / 65536
 
-    # Запись в память датчика полученные значения Scale
+    # Запись в память датчика значения Scale
     def _scale(self, value):
         coefficient = 1
         bits = 16
@@ -299,6 +299,25 @@ class ADIS_16490:
         self._scale_low = value & 0xff
         self._scale_high = (value >> 8) & 0xff
         return self._scale_low, self._scale_high
+
+        # Запись в память датчика значения Bias
+    def _bias(self, value, coefficient, bits):
+
+        value = value / coefficient  # Делим на коэф
+        # Округляем, так как если сразу перевести число в int часть значений пропадает
+        value = int(round(value))  # Переводим из float в  integer
+        if(value < 0):  # Если число отрицательное, то переводим в дополнительный код
+            value = value + (1 << bits)
+        # Далее, необходимо полученное 32 битное число разделить на 2 части по 16 бит каждое
+        self._bias_low = value & 0xFFFF
+        self._bias_high = (value >> 16) & 0xFFFF
+        # 16 бит делим по 8 бит.
+        self._bias_low1 = self._bias_low & 0xff  # Младшие 8 бит
+        self._bias_low2 = (self._bias_low >> 8) & 0xff  # Старшие 8 бит
+        # 16 бит делим по 8 бит.
+        self._bias_high1 = self._bias_high & 0xff  # Младшие 8 бит
+        self._bias_high2 = (self._bias_high >> 8) & 0xff  # Старшие 8 бит
+        return self._bias_low1, self._bias_low2, self._bias_high1, self._bias_high2   
     
     def scale_set(self, sensor_type, axis, value):
         if not (isinstance(sensor_type, SensorType) or isinstance(axis, Axis) or isinstance(value, (int, float))):
@@ -355,9 +374,94 @@ class ADIS_16490:
             self.scale_out = ((self.scale_out - 32768) / 32768) - 1
         return self.scale_out
 
+    
+    
+    
+    def bias_set(self, sensor_type, axis, value):
+        if not (isinstance(sensor_type, SensorType) or isinstance(axis, Axis) or isinstance(value, (int, float))):
+            raise Exception("Введён не верный тип данных")
+        
+        self._select_page(0x02)
+        self._scale_value = value
+        if sensor_type == SensorType.gyro:
+            self._bias_low1, self._bias_low2, self._bias_high1, self._bias_high2 = self._bias(
+                                                        value, 0.005/65536, 32)
+            if axis == Axis.x:
+                self._set(_XG_BIAS_LOW, self._bias_low1)
+                self._set(_XG_BIAS_LOW + 1, self._bias_low2)
+                self._set(_XG_BIAS_HIGH, self._bias_high1)
+                self._set(_XG_BIAS_HIGH + 1, self._bias_high2)
+            elif axis == Axis.y:
+                self._set(_YG_BIAS_LOW, self._bias_low1)
+                self._set(_YG_BIAS_LOW + 1, self._bias_low2)
+                self._set(_YG_BIAS_HIGH, self._bias_high1)
+                self._set(_YG_BIAS_HIGH + 1, self._bias_high2)
+            elif axis == Axis.z:
+                self._set(_ZG_BIAS_LOW, self._bias_low1)
+                self._set(_ZG_BIAS_LOW + 1, self._bias_low2)
+                self._set(_ZG_BIAS_HIGH, self._bias_high1)
+                self._set(_ZG_BIAS_HIGH + 1, self._bias_high2)
+        elif sensor_type == SensorType.accl:
+            self._bias_low1, self._bias_low2, self._bias_high1, self._bias_high2 = self._bias(
+                                                        value, 0.5/65536, 32)
+            if axis == Axis.x:
+                self._set(_XA_BIAS_LOW, self._bias_low1)
+                self._set(_XA_BIAS_LOW + 1, self._bias_low2)
+                self._set(_XA_BIAS_HIGH, self._bias_high1)
+                self._set(_XA_BIAS_HIGH + 1, self._bias_high2)
+            elif axis == Axis.y:
+                self._set(_YA_BIAS_LOW, self._bias_low1)
+                self._set(_YA_BIAS_LOW + 1, self._bias_low2)
+                self._set(_YA_BIAS_HIGH, self._bias_high1)
+                self._set(_YA_BIAS_HIGH + 1, self._bias_high2)
+            elif axis == Axis.z:
+                self._set(_ZA_BIAS_LOW, self._bias_low1)
+                self._set(_ZA_BIAS_LOW + 1, self._bias_low2)
+                self._set(_ZA_BIAS_HIGH, self._bias_high1)
+                self._set(_ZA_BIAS_HIGH + 1, self._bias_high2)
 
-  
-
+    def bias_get(self, sensor_type, axis):
+        if not (isinstance(sensor_type, SensorType) or isinstance(axis, Axis)):
+            raise Exception("Введён не верный тип данных")
+        self._select_page(0x02)
+        if sensor_type == SensorType.gyro:
+            if axis == Axis.x:
+                self.xg_bias_low = self._get(_XG_BIAS_LOW)
+                self.xg_bias_high = self._get(_XG_BIAS_HIGH)
+                self.xg_bias_32 = self._unity(self.xg_bias_high, self.xg_bias_low)
+                self.xg_bias_32 = self._check(self.xg_bias_32, 32)  
+                return self.xg_bias_32 * 0.005 / 65536
+            elif axis == Axis.y:
+                self.yg_bias_low = self._get(_YG_BIAS_LOW)
+                self.yg_bias_high = self._get(_YG_BIAS_HIGH)
+                self.yg_bias_32 = self._unity(self.yg_bias_high, self.yg_bias_low)
+                self.yg_bias_32 = self._check(self.yg_bias_32, 32)  
+                return self.yg_bias_32 * 0.005 / 65536
+            elif axis == Axis.z:
+                self.zg_bias_low = self._get(_ZG_BIAS_LOW)
+                self.zg_bias_high = self._get(_ZG_BIAS_HIGH)
+                self.zg_bias_32 = self._unity(self.zg_bias_high, self.zg_bias_low)
+                self.zg_bias_32 = self._check(self.zg_bias_32, 32) 
+                return self.zg_bias_32 * 0.005 / 65536   
+        elif sensor_type == SensorType.accl:
+            if axis == Axis.x:
+                self.xa_bias_low = self._get(_XA_BIAS_LOW)
+                self.xa_bias_high = self._get(_XA_BIAS_HIGH)
+                self.xa_bias_32 = self._unity(self.xa_bias_high, self.xa_bias_low)
+                self.xa_bias_32 = self._check(self.xa_bias_32, 32)  
+                return self.xa_bias_32 * 0.5 / 65536
+            elif axis == Axis.y:
+                self.ya_bias_low = self._get(_YA_BIAS_LOW)
+                self.ya_bias_high = self._get(_YA_BIAS_HIGH)
+                self.ya_bias_32 = self._unity(self.ya_bias_high, self.ya_bias_low)
+                self.ya_bias_32 = self._check(self.ya_bias_32, 32) 
+                return self.ya_bias_32 * 0.5 / 65536
+            elif axis == Axis.z:
+                self.za_bias_low = self._get(_ZA_BIAS_LOW)
+                self.za_bias_high = self._get(_ZA_BIAS_HIGH)
+                self.za_bias_32 = self._unity(self.za_bias_high, self.za_bias_low)
+                self.za_bias_32 = self._check(self.za_bias_32, 32)  
+                return self.za_bias_32 * 0.5 / 65536
 
 # x = SensorValue._value
 # print(x)
@@ -367,17 +471,17 @@ sensor.decrate = 3
 # print(x)
 # n = 0
 
-sensor.scale_set(SensorType.gyro, Axis.x, -0.5)
-sensor.scale_set(SensorType.gyro, Axis.y, -0.58)
+sensor.bias_set(SensorType.gyro, Axis.x, 5)
+sensor.bias_set(SensorType.gyro, Axis.y, -98)
 
 
 
 # print(sensor.z_accl)
 # # Вывод параметров в консоль
 while True:
-    y = sensor.scale_get(SensorType.gyro, Axis.x)
+    y = sensor.bias_get(SensorType.gyro, Axis.x)
     print(y)
-    z = sensor.scale_get(SensorType.gyro, Axis.y)
+    z = sensor.bias_get(SensorType.gyro, Axis.y)
     print(z)
 #     n += 100
 #     print(sensor.temp)
