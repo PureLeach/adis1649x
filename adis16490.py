@@ -1,17 +1,12 @@
 from enum import Enum
-import time
 import spidev
 import RPi.GPIO as GPIO
 
 
-import random
-
-# ADIS 16490 USER self.regISTER MEMORY MAP
-
+# ADIS 16490 USER REGISTER MEMORY MAP
 _PAGE_ID = 0x00  # Same for all pages
 
 # PAGE 0x00
-
 _DATA_CNT = 0x04
 _SYS_E_FLAG = 0x08
 _DIAG_STS = 0x0A
@@ -44,8 +39,8 @@ _Z_DELTVEL_OUT = 0x56
 _PROD_ID = 0x7E
 
 # PAGE 0x01 Reserved
-# PAGE 0x02
 
+# PAGE 0x02
 _X_GYRO_SCALE = 0x04
 _Y_GYRO_SCALE = 0x06
 _Z_GYRO_SCALE = 0x08
@@ -72,7 +67,6 @@ _FLSHCNT_LOW = 0x7C
 _FLSHCNT_HIGH = 0x7E
 
 # PAGE 0x03
-
 _GLOB_CMD = 0x02
 _FNCTIO_CTRL = 0x06
 _GPIO_CTRL = 0x08
@@ -88,7 +82,6 @@ _FIRM_Y = 0x7C
 _BOOT_REV = 0x7E
 
 # PAGE 0x04
-
 _CAL_SIGTR_LWR = 0x04
 _CAL_SIGTR_UPR = 0x06
 _CAL_DRVTN_LWR = 0x08
@@ -108,9 +101,8 @@ spi.mode = 3  # Выбор режима работы SPI (от 0 до 3)
 GPIO.setmode(GPIO.BCM)  # Выбор режима нумерации выводов GPIO
 GPIO.setup(IRQ, GPIO.IN)  # Инициализация GPIO6 на ввод
 
+
 # Функция читающая данные по шине SPI
-
-
 def _spi_read(spi, reg):  # Функция считывания данных по SPI
     send = [0]*2  # Создаём список из двух элементов
     # В 0 ячейку списка записываем адрес, который указываем в параметре reg
@@ -126,7 +118,8 @@ def _spi_read(spi, reg):  # Функция считывания данных п�
 # Функция записывающая данные по шине SPI
 def _spi_write(spi, reg, value):  # Функция записи данных по SPI
     send = [0]*2  # Создаём список из двух элементов
-    # В 0 ячейку списка записываем адрес, который указываем в параметре reg и с помощью лог.ИЛИ указываем старший бит на запись
+    # В 0 ячейку списка записываем адрес, который указываем в параметре reg и
+    # с помощью лог.ИЛИ указываем старший бит на запись
     send[0] = 0x80 | reg
     send[1] = value  # В 1 ячейку отправляем данные которые нужно записать
     spi.writebytes(send)  # Отправляем байты по шине SPI
@@ -136,14 +129,15 @@ class SensorType(Enum):
     gyro = 'gyro'
     accl = 'accl'
 
+
 class Axis(Enum):
     x = 'x'
     y = 'y'
     z = 'z'
 
-# Основной класс датчика
-class ADIS_16490:
-# добавить проверку на ошибки
+
+class Adis16490:
+    # добавить проверку на ошибки
     def __init__(self):
         """Check the ADIS was found, read the coefficients and enable the sensor"""
         # Check device ID.
@@ -152,10 +146,10 @@ class ADIS_16490:
         _spi_write(spi, _PAGE_ID, 0x00)  # Переключаемся на 1 страницу
         GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         # Считываем ID датчика, если не совпадает, то вызываем ошибку
-        ADIS_PROD_ID = _spi_read(spi, _PROD_ID)
-        if ADIS_PROD_ID != 16490:
+        adis_prod_id = _spi_read(spi, _PROD_ID)
+        if adis_prod_id != 16490:
             raise RuntimeError(
-                f"Failed to find ADIS 16490! Chip ID {ADIS_PROD_ID}")
+                f"Failed to find ADIS 16490! Chip ID {adis_prod_id}")
 
     # Метод для чтения данных по номеру адреса регистра
     def _get(self, reg):
@@ -282,27 +276,25 @@ class ADIS_16490:
 
     # Запись в память датчика значения Scale
     def _scale(self, value):
-        coefficient = 1
         bits = 16
         # Масштабируем число в формат от 32768 до 65535
-        if (-1 <= value < 0):  
+        if (-1 <= value < 0):
             value = ((value + 1) * 32767) + 32768
         # Масштабируем число в формат от 0 до 32767
-        elif (0 <= value <= 1):  
+        elif (0 <= value <= 1):
             value = (value * 32767)
         # Округляем и переводим в integer
         value = int(round(value))
         # Если число отрицательное, то переводим в дополнительный код
-        if value < 0:  
+        if value < 0:
             value = value + (1 << bits)
         # Далее, необходимо полученное число разделить на 2 части по 8 бит каждое
         self._scale_low = value & 0xff
         self._scale_high = (value >> 8) & 0xff
         return self._scale_low, self._scale_high
 
-        # Запись в память датчика значения Bias
+    # Запись в память датчика значения Bias
     def _bias(self, value, coefficient, bits):
-
         value = value / coefficient  # Делим на коэф
         # Округляем, так как если сразу перевести число в int часть значений пропадает
         value = int(round(value))  # Переводим из float в  integer
@@ -317,8 +309,8 @@ class ADIS_16490:
         # 16 бит делим по 8 бит.
         self._bias_high1 = self._bias_high & 0xff  # Младшие 8 бит
         self._bias_high2 = (self._bias_high >> 8) & 0xff  # Старшие 8 бит
-        return self._bias_low1, self._bias_low2, self._bias_high1, self._bias_high2   
-    
+        return self._bias_low1, self._bias_low2, self._bias_high1, self._bias_high2
+
     def scale_set(self, sensor_type, axis, value):
         if not (isinstance(sensor_type, SensorType) or isinstance(axis, Axis) or isinstance(value, (int, float))):
             raise Exception("Введён не верный тип данных")
@@ -348,7 +340,7 @@ class ADIS_16490:
                 self._set(_Z_ACCL_SCALE, self._scale_low)
                 self._set(_Z_ACCL_SCALE + 1, self._scale_high)
         return f'{sensor_type}, {axis}, {value}'
-        
+
     def scale_get(self, sensor_type, axis):
         if not (isinstance(sensor_type, SensorType) or isinstance(axis, Axis)):
             raise Exception("Введён не верный тип данных")
@@ -368,24 +360,20 @@ class ADIS_16490:
             elif axis == Axis.z:
                 self.scale_out = self._get(_Z_ACCL_SCALE)
         # Масштабируем данные
-        if self.scale_out <= 32767:  
+        if self.scale_out <= 32767:
             self.scale_out = (self.scale_out / 32768)
-        elif self.scale_out >= 32768:  
+        elif self.scale_out >= 32768:
             self.scale_out = ((self.scale_out - 32768) / 32768) - 1
         return self.scale_out
 
-    
-    
-    
     def bias_set(self, sensor_type, axis, value):
         if not (isinstance(sensor_type, SensorType) or isinstance(axis, Axis) or isinstance(value, (int, float))):
             raise Exception("Введён не верный тип данных")
-        
         self._select_page(0x02)
         self._scale_value = value
         if sensor_type == SensorType.gyro:
             self._bias_low1, self._bias_low2, self._bias_high1, self._bias_high2 = self._bias(
-                                                        value, 0.005/65536, 32)
+                value, 0.005/65536, 32)
             if axis == Axis.x:
                 self._set(_XG_BIAS_LOW, self._bias_low1)
                 self._set(_XG_BIAS_LOW + 1, self._bias_low2)
@@ -403,7 +391,7 @@ class ADIS_16490:
                 self._set(_ZG_BIAS_HIGH + 1, self._bias_high2)
         elif sensor_type == SensorType.accl:
             self._bias_low1, self._bias_low2, self._bias_high1, self._bias_high2 = self._bias(
-                                                        value, 0.5/65536, 32)
+                value, 0.5/65536, 32)
             if axis == Axis.x:
                 self._set(_XA_BIAS_LOW, self._bias_low1)
                 self._set(_XA_BIAS_LOW + 1, self._bias_low2)
@@ -428,39 +416,45 @@ class ADIS_16490:
             if axis == Axis.x:
                 self.xg_bias_low = self._get(_XG_BIAS_LOW)
                 self.xg_bias_high = self._get(_XG_BIAS_HIGH)
-                self.xg_bias_32 = self._unity(self.xg_bias_high, self.xg_bias_low)
-                self.xg_bias_32 = self._check(self.xg_bias_32, 32)  
+                self.xg_bias_32 = self._unity(
+                    self.xg_bias_high, self.xg_bias_low)
+                self.xg_bias_32 = self._check(self.xg_bias_32, 32)
                 return self.xg_bias_32 * 0.005 / 65536
             elif axis == Axis.y:
                 self.yg_bias_low = self._get(_YG_BIAS_LOW)
                 self.yg_bias_high = self._get(_YG_BIAS_HIGH)
-                self.yg_bias_32 = self._unity(self.yg_bias_high, self.yg_bias_low)
-                self.yg_bias_32 = self._check(self.yg_bias_32, 32)  
+                self.yg_bias_32 = self._unity(
+                    self.yg_bias_high, self.yg_bias_low)
+                self.yg_bias_32 = self._check(self.yg_bias_32, 32)
                 return self.yg_bias_32 * 0.005 / 65536
             elif axis == Axis.z:
                 self.zg_bias_low = self._get(_ZG_BIAS_LOW)
                 self.zg_bias_high = self._get(_ZG_BIAS_HIGH)
-                self.zg_bias_32 = self._unity(self.zg_bias_high, self.zg_bias_low)
-                self.zg_bias_32 = self._check(self.zg_bias_32, 32) 
-                return self.zg_bias_32 * 0.005 / 65536   
+                self.zg_bias_32 = self._unity(
+                    self.zg_bias_high, self.zg_bias_low)
+                self.zg_bias_32 = self._check(self.zg_bias_32, 32)
+                return self.zg_bias_32 * 0.005 / 65536
         elif sensor_type == SensorType.accl:
             if axis == Axis.x:
                 self.xa_bias_low = self._get(_XA_BIAS_LOW)
                 self.xa_bias_high = self._get(_XA_BIAS_HIGH)
-                self.xa_bias_32 = self._unity(self.xa_bias_high, self.xa_bias_low)
-                self.xa_bias_32 = self._check(self.xa_bias_32, 32)  
+                self.xa_bias_32 = self._unity(
+                    self.xa_bias_high, self.xa_bias_low)
+                self.xa_bias_32 = self._check(self.xa_bias_32, 32)
                 return self.xa_bias_32 * 0.5 / 65536
             elif axis == Axis.y:
                 self.ya_bias_low = self._get(_YA_BIAS_LOW)
                 self.ya_bias_high = self._get(_YA_BIAS_HIGH)
-                self.ya_bias_32 = self._unity(self.ya_bias_high, self.ya_bias_low)
-                self.ya_bias_32 = self._check(self.ya_bias_32, 32) 
+                self.ya_bias_32 = self._unity(
+                    self.ya_bias_high, self.ya_bias_low)
+                self.ya_bias_32 = self._check(self.ya_bias_32, 32)
                 return self.ya_bias_32 * 0.5 / 65536
             elif axis == Axis.z:
                 self.za_bias_low = self._get(_ZA_BIAS_LOW)
                 self.za_bias_high = self._get(_ZA_BIAS_HIGH)
-                self.za_bias_32 = self._unity(self.za_bias_high, self.za_bias_low)
-                self.za_bias_32 = self._check(self.za_bias_32, 32)  
+                self.za_bias_32 = self._unity(
+                    self.za_bias_high, self.za_bias_low)
+                self.za_bias_32 = self._check(self.za_bias_32, 32)
                 return self.za_bias_32 * 0.5 / 65536
 
     # Miscellaneous Configuration
@@ -477,7 +471,6 @@ class ADIS_16490:
         self._select_page(0x03)
         self._set(_CONFIG, value)
         self._set(_CONFIG + 1, 0x00)
-
 
     # Cброс всех параметров
     @property
@@ -566,19 +559,19 @@ class ADIS_16490:
 
         self._select_page(0x04)
         self._serial_num = self._get(_SERIAL_NUM)
-        
+
         self._select_page(0x05)
         self._fir_coef_A000 = hex(self._get(0x08))
         self._fir_coef_A001 = hex(self._get(0x0A))
         self._fir_coef_A002 = hex(self._get(0x0C))
         self._fir_coef_A059 = hex(self._get(0x7E))
-        
+
         self._select_page(0x06)
         self._fir_coef_A060 = hex(self._get(0x08))
         self._fir_coef_A061 = hex(self._get(0x0A))
         self._fir_coef_A062 = hex(self._get(0x0C))
         self._fir_coef_A119 = hex(self._get(0x7E))
-        
+
         self._select_page(0x07)
         self._fir_coef_B000 = hex(self._get(0x08))
         self._fir_coef_B001 = hex(self._get(0x0A))
@@ -590,7 +583,7 @@ class ADIS_16490:
         self._fir_coef_B061 = hex(self._get(0x0A))
         self._fir_coef_B062 = hex(self._get(0x0C))
         self._fir_coef_B119 = hex(self._get(0x7E))
-        
+
         self._select_page(0x09)
         self._fir_coef_C000 = hex(self._get(0x08))
         self._fir_coef_C001 = hex(self._get(0x0A))
@@ -616,54 +609,13 @@ class ADIS_16490:
         self._fir_coef_D119 = hex(self._get(0x7E))
 
         dic = [[self._prod_id, self._serial_num, self._decrate, self._config, self._x_gyro_bias,
-            self._y_gyro_bias, self._z_gyro_bias, self._x_gyro_scale, self._y_gyro_scale, self._z_gyro_scale],
-           [self._fir_coef_A000, self._fir_coef_A001, self._fir_coef_A002, self._fir_coef_A059,
-            self._fir_coef_A060, self._fir_coef_A061, self._fir_coef_A062, self._fir_coef_A119],
-           [self._fir_coef_B000, self._fir_coef_B001, self._fir_coef_B002, self._fir_coef_B059,
-            self._fir_coef_B060, self._fir_coef_B061, self._fir_coef_B062, self._fir_coef_B119],
-           [self._fir_coef_C000, self._fir_coef_C001, self._fir_coef_C002, self._fir_coef_C059,
-               self._fir_coef_C060, self._fir_coef_C061, self._fir_coef_C062, self._fir_coef_C119],
-           [self._fir_coef_D000, self._fir_coef_D001, self._fir_coef_D002, self._fir_coef_D059,
-            self._fir_coef_D060, self._fir_coef_D061, self._fir_coef_D062, self._fir_coef_D119]]
+                self._y_gyro_bias, self._z_gyro_bias, self._x_gyro_scale, self._y_gyro_scale, self._z_gyro_scale],
+               [self._fir_coef_A000, self._fir_coef_A001, self._fir_coef_A002, self._fir_coef_A059,
+                self._fir_coef_A060, self._fir_coef_A061, self._fir_coef_A062, self._fir_coef_A119],
+               [self._fir_coef_B000, self._fir_coef_B001, self._fir_coef_B002, self._fir_coef_B059,
+                self._fir_coef_B060, self._fir_coef_B061, self._fir_coef_B062, self._fir_coef_B119],
+               [self._fir_coef_C000, self._fir_coef_C001, self._fir_coef_C002, self._fir_coef_C059,
+                self._fir_coef_C060, self._fir_coef_C061, self._fir_coef_C062, self._fir_coef_C119],
+               [self._fir_coef_D000, self._fir_coef_D001, self._fir_coef_D002, self._fir_coef_D059,
+                self._fir_coef_D060, self._fir_coef_D061, self._fir_coef_D062, self._fir_coef_D119]]
         return dic
-
-
-
-# x = SensorValue._value
-# print(x)
-sensor = ADIS_16490()  # Создание экземпляра класса
-x = sensor.burst_read
-# sensor.config = 0b11000000
-# x = sensor.config
-print(x)
-# sensor.reset
-# x = sensor.config
-# print(x)
-
-# x = sensor.decrate
-# print(x)
-# n = 0
-
-# sensor.bias_set(SensorType.gyro, Axis.x, 5)
-# sensor.bias_set(SensorType.gyro, Axis.y, -98)
-
-
-
-# print(sensor.z_accl)
-# # # Вывод параметров в консоль
-# while True:
-#     y = sensor.bias_get(SensorType.gyro, Axis.x)
-#     print(y)
-#     z = sensor.bias_get(SensorType.gyro, Axis.y)
-#     print(z)
-#     n += 100
-#     print(sensor.temp)
-#     print(sensor.decrate)
-#     print(sensor.x_accl)
-#     print(sensor.y_accl)
-#     print(sensor.z_accl)
-#     print(sensor.x_gyro)
-#     print(sensor.y_gyro)
-#     print(sensor.z_gyro)
-#     sensor.decrate = n
-    # time.sleep(1)
