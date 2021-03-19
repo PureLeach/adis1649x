@@ -1,3 +1,18 @@
+"""SPI driver for the Analog Devices IMU sensors ADIS1649x.
+
+Classes:
+
+    SensorType
+    Axis
+    Adis1649x
+
+Functions:
+
+    _spi_read (object, int) -> int
+    _spi_write(object, int, int)
+
+"""
+
 from enum import Enum
 import spidev
 import RPi.GPIO as GPIO
@@ -96,168 +111,150 @@ _CODE_DRVTN_UPR = 0x12
 _SERIAL_NUM = 0x20
 
 
-IRQ = 6  # GPIO connect to data ready
+IRQ = 6  # GPIO connect to Interrupt request
 CS = 8  # GPIO connect to chip select
-spi = spidev.SpiDev()  # Создаем объект SPI
-spi.open(0, 0)  # Выбор номера порта и номера устройства(CS) шины SPI
-spi.max_speed_hz = 8000000  # Задаём максимальную скорость работы шины SPI
-spi.mode = 3  # Выбор режима работы SPI (от 0 до 3)
-GPIO.setmode(GPIO.BCM)  # Выбор режима нумерации выводов GPIO
-GPIO.setup(IRQ, GPIO.IN)  # Data ready
+spi = spidev.SpiDev()  # Creating an SPI object
+spi.open(0, 0)  # Selecting the port number and device number (CS) of the SPI bus
+spi.max_speed_hz = 8000000  # Setting the maximum speed of the SPI bus
+spi.mode = 3  # Selecting the SPI operation mode (from 0 to 3)
+GPIO.setmode(GPIO.BCM)  # Selecting the GPIO pin numbering mode
+GPIO.setup(IRQ, GPIO.IN)  # Interrupt request
 GPIO.setup(CS, GPIO.OUT)  # Chip select
-GPIO.output(CS, GPIO.HIGH)
+GPIO.output(CS, GPIO.HIGH)  # Setting the CS signal level to high
 
 
 def _spi_read(spi, reg):
-    """ Функция чтения данных по шине SPI
+    """SPI bus data reading function
 
     Args:
-        spi ([object]): Созданный объект SpiDev
-        reg ([int]): Номер регистра
+        spi ([object]): Created SpiDev object
+        reg ([int]): The number of the register to read
 
     Returns:
-       resp [int]: Выходное значение
+       resp [int]: Output value
     """
 
-    send = [0]*2  # Создаём список из двух элементов
-    # В 0 ячейку списка записываем адрес, который указываем в параметре reg
+    send = [0]*2  
     send[0] = reg
-    spi.writebytes(send)  # Отправляем байты по шине SPI
-    # Считываем 2 байта по шине SPI. В итоге получаем список из двух значений [x1, x2]
-    resp = spi.readbytes(2)
-    # Сдвигаем 8 бит ячейки 0 влево, затем используем лог.сложение с ячейкой 1
-    resp = ((resp[0] << 8) | resp[1])
+    spi.writebytes(send)  # Sending bytes over the SPI bus
+    resp = spi.readbytes(2)  # We read 2 bytes over the SPI bus. As a result, we get a list of two values [x1, x2]
+    resp = ((resp[0] << 8) | resp[1])  # Converting a value to 16-bit
     return resp
 
 
 def _spi_write(spi, reg, value):
-    """ Функция записывающая данные по шине SPI
+    """Function that records data over the SPI bus
 
     Args:
-        spi ([object]): Созданный объект SpiDev
-        reg ([int]): Номер регистра
-        value ([int]): Значение для записи в регистр
+        spi ([object]): Created SpiDev object
+        reg ([int]): The number of the register to write the data to
+        value ([int]): Value to write to a register
     """
-    send = [0]*2  # Создаём список из двух элементов
-    # В 0 ячейку списка записываем адрес, который указываем в параметре reg и
-    # с помощью лог.ИЛИ указываем старший бит на запись
-    send[0] = 0x80 | reg
-    send[1] = value  # В 1 ячейку отправляем данные которые нужно записать
-    spi.writebytes(send)  # Отправляем байты по шине SPI
+    send = [0]*2
+    send[0] = 0x80 | reg # Specify the highest bit for the record (OR 0x80) 
+    send[1] = value  
+    spi.writebytes(send)  # Sending bytes over the SPI bus
 
 
 class SensorType(Enum):
-    """ Класс перечесления типов сенсоров """
+    """Sensor Type Enumeration class"""
     gyro = 'gyro'
     accl = 'accl'
 
 
 class Axis(Enum):
-    """ Класс перечесления осей """
+    """Axis Enumeration Class"""
     x = 'x'
     y = 'y'
     z = 'z'
 
 
 class Adis1649x:
-    """Класс датчика ADIS 1649x в котором реализован интерфейс для взаимодействия с ним.
-
+    """The class of the ADIS 1649x sensor that implements an interface for interacting with it
+        
     Raises:
-        AttributeError: Возникает, если прочтённое id не совпадает с id датчика
-        TypeError: Введёна переменная несоответствующего типа
-        ValueError: Метод получает аргумент правильного типа, но некорректного значения
-
-    Returns:
-        [type]: [description]
+        AttributeError: Occurs if the read id does not match the sensor id
+        TypeError: A variable of the wrong type was entered
+        ValueError: The method gets an argument of the correct type, but an incorrect value
     """
 
     # добавить проверку на ошибки
     def __init__(self, prod_id=16490):
-        """Check the ADIS was found, read the coefficients and enable the sensor"""
-        # Check device ID.
-        # Ждём уровень спадающего фронта (по документации)
+        """Checking the sensor ID"""
+        _spi_write(spi, _PAGE_ID, 0x00)
         GPIO.wait_for_edge(IRQ, GPIO.FALLING)
-        _spi_write(spi, _PAGE_ID, 0x00)  # Переключаемся на 1 страницу
-        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
-        # Считываем ID датчика, если не совпадает, то вызываем ошибку
         adis_prod_id = _spi_read(spi, _PROD_ID)
         if adis_prod_id != prod_id:
             raise RuntimeError(
                 f"Failed to find ADIS {prod_id}! Chip ID {adis_prod_id}")
 
-    # Метод для чтения данных по номеру адреса регистра
     def _get(self, reg):
-        """ Дожидаемя сигнала data ready и отправляем данные во внешнюю функцию чтения
+        """We wait for the Interrupt request signal and send the data to the external read function
 
         Args:
-            reg ([int]): Номер регистра, который необходима прочитать
+            reg ([int]): The number of the register to read
 
         Returns:
-            [int]: Полученный ответ
+            [int]: Received response
         """
-
         GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         self.value = _spi_read(spi, reg)
         return self.value
 
-    # Метод для записи данных по номеру адреса регистра
     def _set(self, reg, value):
-        """ Отправляем данные во внешнюю функцию записи"""
+        """Sending data to an external recording function"""
         # GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         _spi_write(spi, reg, value)
 
     def _select_page(self, page):
-        """ Метод для переключения страницы регистров
+        """Method for switching the register page
 
         Args:
-            page ([int]): Номер страницы на которую необходимо переключиться
+            page ([int]): The number of the page to switch to
         """
         GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         _spi_write(spi, _PAGE_ID, page)
 
     def _comb_16_into_32(self, high, low):
-        """ Метод для объединения 16 битных чисел в 32 бита
-        путём операций смещения старших битов влево и логической суммы
+        """A method for combining 16 bit numbers into 32 bits by shifting the highest bits to the left and the logical sum
 
         Args:
-            high ([int]): Старшие 16 бита
-            low ([int]): Младшие 16 бита
+            high ([int]): High 16 bits
+            low ([int]): Low 16 bits
 
         Returns:
-            [int]: 32 битное число
+            [int]: 32 bit number
         """
         bit32 = ((high << 16) | (low & 0xFFFF))
         return bit32
 
-    # Метод для объединения 8 битных чисел в 32 бита
     def _comb_8_into_32(self, low_senior, low_junior, high_senior, high_junior):
-        """ Метод для объединения 8 битных чисел в 32 бита
-        путём операций смещения старших битов влево и логической суммы
+        """A method for combining 8 bit numbers into 32 bits by shifting the highest bits to the left and the logical sum
 
         Args:
-            low_senior ([int]): Старшие 8 бит из младшего 16 битного числа
-            low_junior ([int]): Млашие 8 бит из младшего 16 битного числа
-            high_senior ([int]): Старшие 8 бит из старшего 16 битного числа
-            high_junior ([int]): Младшие 8 бит из старшего 16 битного числа
+            low_senior ([int]): The highest 8 bits of the lowest 16 bit number
+            low_junior ([int]): The lower 8 bits of the lower 16 bit number
+            high_senior ([int]): The highest 8 bits of the highest 16 bit number
+            high_junior ([int]): The lower 8 bits of the higher 16 bit number
 
         Returns:
-            [int]: 32 битное число
+            [int]: 32 bit number
         """
-        low = ((low_senior << 8) | low_junior)  # 16 бит
-        out = ((high_senior << 8) | high_junior)  # 16 бит
-        bit32 = ((out << 16) | (low & 0xFFFF))
+        low16 = ((low_senior << 8) | low_junior)  
+        high16 = ((high_senior << 8) | high_junior)  
+        bit32 = ((high16 << 16) | (low16 & 0xFFFF))
         return bit32
 
     def _check(self, value, bits):
-        """ Проверка значения на знак. Если последний бит числа равен единице,
-        то переводим из дополнительного кода в прямой код и последний разряд изменяем на занк "-"
+        """Checking the value for a sign. If the last bit of the number is equal to one,
+        then we translate from the additional code to the direct code and change the last digit to a sign "-"
 
         Args:
-            value ([int]): Значение, которое необходимо проверить
-            bits ([int]): Количество бит в числе value
+            value ([int]): Value to check
+            bits ([int]): The number of bits in the value number
 
         Returns:
-            [int]: Переведённое значение
+            [int]: Converted value
         """
         if((value & (1 << (bits-1))) != 0):
             value = value - (1 << bits)
@@ -265,12 +262,12 @@ class Adis1649x:
 
     @property
     def temp(self):
-        """ Вывод значения температуры
-        Формула для представления числа из datasheet:
+        """Output of the temperature value
+        Formula for representing a number from a dataset:
         0.01429 * temp_raw + 25
 
         Returns:
-            [float]: Преобразованное значение температуры
+            [float]: Converted temperature value
         """
         self._select_page(0x00)
         temp_raw = self._get(_TEMP_OUT)
@@ -279,12 +276,12 @@ class Adis1649x:
 
     @property
     def decrate(self):
-        """ Геттер для чтения значения декрейта
-        Декрейт определяет частоту выдаваемых датчиком значений.
-        Формула: f = 4250 / (decrate + 1)
+        """Getter for reading the decrate value
+        Decrate determines the frequency of values issued by the sensor.
+        Formula: f = 4250 / (decrate + 1)
 
         Returns:
-            [int]: Значение decrate
+            [int]: The value of decorate
         """
         self._select_page(0x03)
         self.decrate_ = self._get(_DEC_RATE)
@@ -293,17 +290,16 @@ class Adis1649x:
     # Добавить проверку диапазона
     @decrate.setter
     def decrate(self, value):
-        """ Сеттер для изменения параметра декрейта
+        """Setter for changing the decorate
 
         Args:
-            value ([int]): Входное значение
+            value ([int]): Input value
 
         Raises:
-            TypeError: [description] Ошибка возникает, когда вводимое значение не int
+            TypeError: [description] The error occurs when the input value is not int
         """
-
         if not isinstance(value, int):
-            raise TypeError("decrate должен быть тип int")
+            raise TypeError("Decrate type must be int")
         self._decrate_low = value & 0xff
         self._decrate_high = (value >> 8) & 0xff
         self._select_page(0x03)
@@ -312,7 +308,7 @@ class Adis1649x:
 
     @property
     def x_gyro(self):
-        """ Геттер для вывода значений гироскопа оси X
+        """Getter for displaying the values of the X-axis gyroscope
 
         Returns:
             [float]: Преобразованое значение гироскопа
@@ -328,10 +324,10 @@ class Adis1649x:
 
     @property
     def x_accl(self):
-        """ Геттер для вывода значений акселерометра оси X
+        """Getter for displaying the values of the X-axis accelerometer
 
         Returns:
-            [float]: Преобразованое значение акселерометра
+            [float]: Converted accelerometer value
         """
         self._select_page(0x00)
         self.x_accl_low = self._get(_X_ACCL_LOW)
@@ -344,10 +340,10 @@ class Adis1649x:
 
     @property
     def y_gyro(self):
-        """ Геттер для вывода значений гироскопа оси Y
+        """Getter for displaying the values of the Y-axis gyroscope
 
         Returns:
-            [float]: Преобразованое значение гироскопа
+            [float]: Converted gyroscope value
         """
         self._select_page(0x00)
         self.y_gyro_low = self._get(_Y_GYRO_LOW)
@@ -360,10 +356,10 @@ class Adis1649x:
 
     @property
     def y_accl(self):
-        """ Геттер для вывода значений акселерометра оси Y
+        """Getter for displaying the values of the Y-axis accelerometer
 
         Returns:
-            [float]: Преобразованое значение акселерометра
+            [float]: Converted accelerometer value
         """
         self._select_page(0x00)
         self.y_accl_low = self._get(_Y_ACCL_LOW)
@@ -376,10 +372,10 @@ class Adis1649x:
 
     @property
     def z_gyro(self):
-        """ Геттер для вывода значений гироскопа оси Z
+        """Getter for displaying the values of the Z-axis gyroscope
 
         Returns:
-            [float]: Преобразованое значение гироскопа
+            [float]: Converted gyroscope value
         """
         self._select_page(0x00)
         self.z_gyro_low = self._get(_Z_GYRO_LOW)
@@ -392,10 +388,10 @@ class Adis1649x:
 
     @property
     def z_accl(self):
-        """ Геттер для вывода значений акселерометра оси Z
+        """Getter for displaying the values of the Z-axis accelerometer
 
         Returns:
-            [float]: Преобразованое значение акселерометра
+            [float]: Converted accelerometer value
         """
         self._select_page(0x00)
         self.z_accl_low = self._get(_Z_ACCL_LOW)
@@ -409,10 +405,10 @@ class Adis1649x:
 # не доделано!
     @property
     def gyro_axes(self):
-        """ Одновременное чтение трёх осей гироскопа
+        """Simultaneous reading of three gyroscope axes
 
         Returns:
-            [list]: Список из значений гироскопа [Ось X, Ось Y, Ось Z]
+            [list]: List of gyroscope values [X-Axis, Y-Axis, Z-Axis]
         """
         self._select_page(0x00)
         GPIO.wait_for_edge(IRQ, GPIO.FALLING)
@@ -446,7 +442,7 @@ class Adis1649x:
 
         return self.z_accl_32 * 0.5 / 65536
 
-    # не доделано
+    # не доделал
     # Чтение трёх осей акселерометра
     @property
     def accl_axes(self):
@@ -454,80 +450,69 @@ class Adis1649x:
         return self.z_accl_32 * 0.5 / 65536
 
     def _scale(self, value):
-        """ Преобразование введёного пользователем значения scale
-        в два 8 битных числа
+        """Convert the entered 32 bit scale value to two 8 bit numbers
 
         Args:
-            value ([int]): Введённое значение scale
+            value ([int]): The entered scale value
 
         Returns:
-            [int]: Два 8 битных значения
+            [int]: two 8 bit values
         """
         bits = 16
-        # Масштабируем число в формат от 32768 до 65535
+        # Scaling the number to the format from 32768 to 65535
         if (-1 <= value < 0):
             value = ((value + 1) * 32767) + 32768
-        # Масштабируем число в формат от 0 до 32767
+        # Scaling the number to the format from 0 to 32767
         elif (0 <= value <= 1):
             value = (value * 32767)
-        # Округляем и переводим в integer
+        # Rounding and converting to integer
         value = int(round(value))
-        # Если число отрицательное, то переводим в дополниельный код
+        # If the number is negative, then we translate it into additional code
         if value < 0:
             value = value + (1 << bits)
-        # Далее, необходимо полученное число разделить на 2 части по 8 бит каждое
         self._scale_low = value & 0xff
         self._scale_high = (value >> 8) & 0xff
         return self._scale_low, self._scale_high
 
-    # Запись в память датчика значения Bias
     def _bias(self, value, coefficient, bits):
-        """ Преобразование введёного 32 битного значение bias
-        в четыре 8 битных числа
+        """Convert the entered 32 bit bias value to four 8 bit numbers
 
         Args:
-            value ([int]): значение для преобразования
-            coefficient ([int]): коэффицент для преобразования
-            bits ([int]): количиство бит в числе
-
+            value ([int]): value to convert
+            coefficient ([int]): conversion factor
+            bits ([int]): number of bits in a number
         Returns:
-            [int]: четыре 8 битных значения
+            [int]: four 8 bit values
         """
-        value = value / coefficient  # Делим на коэф
-        # Округляем, так как если сразу перевести число в int часть значений пропадает
-        value = int(round(value))  # Переводим из float в  integer
-        if(value < 0):  # Если число отрицательное, то переводим в дополнительный код
+        value = value / coefficient  
+        value = int(round(value))  
+        if(value < 0):  
             value = value + (1 << bits)
-        # Далее, необходимо полученное 32 битное число разделить на 2 части по 16 бит каждое
         self._bias_low = value & 0xFFFF
         self._bias_high = (value >> 16) & 0xFFFF
-        # 16 бит делим по 8 бит
-        self._bias_low1 = self._bias_low & 0xff  # Младшие 8 бит
-        self._bias_low2 = (self._bias_low >> 8) & 0xff  # Старшие 8 бит
-        # 16 бит делим по 8 бит
-        self._bias_high1 = self._bias_high & 0xff  # Младшие 8 бит
-        self._bias_high2 = (self._bias_high >> 8) & 0xff  # Старшие 8 бит
+        self._bias_low1 = self._bias_low & 0xff  
+        self._bias_low2 = (self._bias_low >> 8) & 0xff
+        self._bias_high1 = self._bias_high & 0xff  
+        self._bias_high2 = (self._bias_high >> 8) & 0xff  
         return self._bias_low1, self._bias_low2, self._bias_high1, self._bias_high2
 
     def scale_set(self, sensor_type, axis, value):
-        """ Метод для записи значения scale введёное пользователем
-        в память датчика
+        """Method for writing the scale value entered by the user to the sensor memory
 
         Args:
-            sensor_type ([SensorType]): тип датчика в регистры которого будет записано введёное значение
-            axis ([Axis]): название оси в которую будет записано значение
-            value ([int]): значение scale
+            sensor_type ([SensorType]): the type of sensor in which the entered value will be written to the registers
+            axis ([Axis]): name of the axis to write the value to
+            value ([int]): value scale
 
         Raises:
-            TypeError: Ошибка возникает, если пользователь ввёл неправильно занчение
-            типа сенсора или название оси
-            ValueError: Ошибка возникает, если введёное значение выходит за рамки допустимого из datasheet
+            TypeError: The error occurs if the user entered an incorrect sensor type value or axis name
+            ValueError: The error occurs if the entered value is out of bounds from the dataset.
 
         Returns:
-            [str]: Пользователю возвращаются введёные им значения
+            [str]: The user is returned the values they entered
         """
         if not (isinstance(sensor_type, SensorType) or isinstance(axis, Axis) or isinstance(value, (int, float))):
-            raise TypeError("Введён не верный тип данных")
+            raise TypeError("Invalid data type entered")
         if not (-1 <= value <= 1):
             raise ValueError("Вышли за пределы допустимого интервала")
         self._scale_value = value
@@ -556,21 +541,20 @@ class Adis1649x:
         return f'{sensor_type}, {axis}, {value}'
 
     def scale_get(self, sensor_type, axis):
-        """ Метод для получения значения scale прочитаные из памяти датчика
+        """Method for getting the scale values read from the sensor memory
 
         Args:
-            sensor_type ([SensorType]): тип датчика из регистра которого будет прочитано значение scale
-            axis ([Axis]): [Axis] название оси из регистра которого будет прочитано значение
+            sensor_type ([SensorType]): the type of sensor from which the value scale will be read from the register
+            axis ([Axis]): the name of the axis from which the value will be read from the register
 
         Raises:
-            TypeError: Ошибка возникает, если пользователь ввёл неправильно занчение
-            типа сенсора или название оси
+            TypeError: The error occurs if the user entered an incorrect sensor type value or axis name.
 
         Returns:
-            [float]: значение прочитаное из заданного регистра
+            [float]: the value read from the specified register
         """
         if not (isinstance(sensor_type, SensorType) or isinstance(axis, Axis)):
-            raise TypeError("Введён не верный тип данных")
+            raise TypeError("Invalid data type entered")
         self._select_page(0x02)
         if sensor_type == SensorType.gyro:
             if axis == Axis.x:
@@ -594,23 +578,21 @@ class Adis1649x:
         return self.scale_out
 
     def bias_set(self, sensor_type, axis, value):
-        """ Метод для записи значения bias введёное пользователем
-        в память датчика
+        """Method for writing the bias value entered by the user into the sensor memory
 
         Args:
-            sensor_type ([SensorType]): тип датчика в регистры которого будет записано введёное значение
-            axis ([Axis]): название оси в которую будет записано значение
-            value ([int]): значение bias
+            sensor_type ([SensorType]): the type of sensor in which the entered value will be written to the registers
+            axis ([Axis]): name of the axis to write the value to
+            value ([int]): value bias
 
         Raises:
-            TypeError: Ошибка возникает, если пользователь ввёл неправильно занчение
-            типа сенсора или название оси
+            TypeError: The error occurs if the user entered an incorrect sensor type value or axis name.
 
         Returns:
-            [str]: Пользователю возвращаются введёные им значения
+            [str]: The user is returned the values they entered
         """
         if not (isinstance(sensor_type, SensorType) or isinstance(axis, Axis) or isinstance(value, (int, float))):
-            raise TypeError("Введён не верный тип данных")
+            raise TypeError("Invalid data type entered")
         self._select_page(0x02)
         self._scale_value = value
         if sensor_type == SensorType.gyro:
@@ -652,21 +634,20 @@ class Adis1649x:
         return f'{sensor_type}, {axis}, {value}'
 
     def bias_get(self, sensor_type, axis):
-        """ Метод для получения значения bias прочитаные из памяти датчика
+        """Method for getting the bias values read from the sensor memory
 
         Args:
-            sensor_type ([SensorType]): тип датчика из регистра которого будет прочитано значение scale
-            axis ([Axis]): [Axis] название оси из регистра которого будет прочитано значение
+            sensor_type ([SensorType]): the type of sensor whose register the value will be read from scale
+            axis ([Axis]): the name of the axis from which the value will be read from the register
 
         Raises:
-            TypeError: Ошибка возникает, если пользователь ввёл неправильно занчение
-            типа сенсора или название оси
+            TypeError: The error occurs if the user entered an incorrect sensor type value or axis name
 
         Returns:
-            [float]: значение прочитаное из заданного регистра
+            [float]: the value read from the specified register
         """
         if not (isinstance(sensor_type, SensorType) or isinstance(axis, Axis)):
-            raise TypeError("Введён не верный тип данных")
+            raise TypeError("Invalid data type entered")
         self._select_page(0x02)
         if sensor_type == SensorType.gyro:
             if axis == Axis.x:
@@ -713,13 +694,12 @@ class Adis1649x:
                 self.za_bias_32 = self._check(self.za_bias_32, 32)
                 return self.za_bias_32 * 0.5 / 65536
 
-    # Miscellaneous Configuration
     @property
     def config(self):
-        """ Геттер для чтения значений Miscellaneous Configuration
+        """Getter for reading Miscellaneous Configuration values
 
         Returns:
-            [str]: Вывод значений в двоичном коде
+            [str]: Output of values in binary code
         """
         self._select_page(0x03)
         self._config = self._get(_CONFIG)
@@ -727,164 +707,50 @@ class Adis1649x:
 
     @config.setter
     def config(self, value):
-        """ Сеттер для настройки Miscellaneous Configuration
+        """Setter to Miscellaneous Configuration
 
         Args:
-            value ([int]): Значение Miscellaneous Configuration
+            value ([int]): Value Miscellaneous Configuration
 
         Raises:
-            TypeError: Ошибка возникает, когда вводимое значение не int
+            TypeError: The error occurs when the input value is not int
         """
         if not isinstance(value, int):
-            raise TypeError("Тип config должен быть int")
+            raise TypeError("Сonfig type must be int") 
         self._select_page(0x03)
         self._set(_CONFIG, value)
         self._set(_CONFIG + 1, 0x00)
 
     @property
     def reset(self):
-        """  Cброс всех параметров """
-        self._select_page(0x02)
-        self._set(_X_GYRO_SCALE, 0x00)
-        self._set(_X_GYRO_SCALE + 1, 0x00)
-        self._set(_X_ACCL_SCALE, 0x00)
-        self._set(_X_ACCL_SCALE + 1, 0x00)
-        self._set(_Y_GYRO_SCALE, 0x00)
-        self._set(_Y_GYRO_SCALE + 1, 0x00)
-        self._set(_Y_ACCL_SCALE, 0x00)
-        self._set(_Y_ACCL_SCALE + 1, 0x00)
-        self._set(_Z_GYRO_SCALE, 0x00)
-        self._set(_Z_GYRO_SCALE + 1, 0x00)
-        self._set(_Z_ACCL_SCALE, 0x00)
-        self._set(_Z_ACCL_SCALE + 1, 0x00)
-        self._set(_XG_BIAS_LOW, 0x00)
-        self._set(_XG_BIAS_LOW + 1, 0x00)
-        self._set(_XG_BIAS_HIGH, 0x00)
-        self._set(_XG_BIAS_HIGH + 1, 0x00)
-        self._set(_YG_BIAS_LOW, 0x00)
-        self._set(_YG_BIAS_LOW + 1, 0x00)
-        self._set(_YG_BIAS_HIGH, 0x00)
-        self._set(_YG_BIAS_HIGH + 1, 0x00)
-        self._set(_ZG_BIAS_LOW, 0x00)
-        self._set(_ZG_BIAS_LOW + 1, 0x00)
-        self._set(_ZG_BIAS_HIGH, 0x00)
-        self._set(_ZG_BIAS_HIGH + 1, 0x00)
-        self._set(_XA_BIAS_LOW, 0x00)
-        self._set(_XA_BIAS_LOW + 1, 0x00)
-        self._set(_XA_BIAS_HIGH, 0x00)
-        self._set(_XA_BIAS_HIGH + 1, 0x00)
-        self._set(_YA_BIAS_LOW, 0x00)
-        self._set(_YA_BIAS_LOW + 1, 0x00)
-        self._set(_YA_BIAS_HIGH, 0x00)
-        self._set(_YA_BIAS_HIGH + 1, 0x00)
-        self._set(_ZA_BIAS_LOW, 0x00)
-        self._set(_ZA_BIAS_LOW + 1, 0x00)
-        self._set(_ZA_BIAS_HIGH, 0x00)
-        self._set(_ZA_BIAS_HIGH + 1, 0x00)
+        """Reset settings"""
         self._select_page(0x03)
+        self._set(_GLOB_CMD, 0b01000000)
+        self._set(_GLOB_CMD+1, 0x00)
         self._set(_DEC_RATE, 0x00)
         self._set(_DEC_RATE + 1, 0x00)
         self._set(_CONFIG, 0x00)
         self._set(_CONFIG + 1, 0x00)
 
-    # Считывание всех параметров
     @property
     def burst_read(self):
+        """The burst read function provides a method for reading a batch of data
+        (status, temperature, gyroscopes, accelerometers, time stamp/data counter, and CRC code),
+        which does not require a stall time between each 16-bit segment and only requires one
+        command on the DIN line to initiate.  
+        
+        Not supported by the sensor ADIS16490!
+        """
+        txData = [0x7C, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         self._select_page(0x00)
-        self._data_cnt = self._get(_DATA_CNT)
-        self._sys_e_flag = hex(self._get(_SYS_E_FLAG))
-        self._diag_sts = self._get(_DIAG_STS)
-        self._temp = self.temp
-        self._x_gyro = self.x_gyro
-        self._y_gyro = self.y_gyro
-        self._z_gyro = self.z_gyro
-        self._x_accl = self.x_accl
-        self._y_accl = self.y_accl
-        self._z_accl = self.z_accl
-        self._time_stamp = self._get(_TIME_STAMP)
-        self._prod_id = self._get(_PROD_ID)
-
-        self._select_page(0x02)
-        self._x_gyro_scale = self.scale_get(SensorType.gyro, Axis.x)
-        self._y_gyro_scale = self.scale_get(SensorType.gyro, Axis.y)
-        self._z_gyro_scale = self.scale_get(SensorType.gyro, Axis.z)
-        self._x_accl_scale = self.scale_get(SensorType.accl, Axis.x)
-        self._y_accl_scale = self.scale_get(SensorType.accl, Axis.y)
-        self._z_accl_scale = self.scale_get(SensorType.accl, Axis.z)
-        self._x_gyro_bias = self.bias_get(SensorType.gyro, Axis.x)
-        self._y_gyro_bias = self.bias_get(SensorType.gyro, Axis.y)
-        self._z_gyro_bias = self.bias_get(SensorType.gyro, Axis.z)
-        self._x_accl_bias = self.bias_get(SensorType.accl, Axis.x)
-        self._y_accl_bias = self.bias_get(SensorType.accl, Axis.y)
-        self._z_accl_bias = self.bias_get(SensorType.accl, Axis.z)
-
-        self._select_page(0x03)
-        self._glob_cmd = hex(self._get(_GLOB_CMD))
-        self._fnctio_ctrl = hex(self._get(_FNCTIO_CTRL))
-        self._gpio_ctrl = hex(self._get(_GPIO_CTRL))
-        self._config = f'{self._get(_CONFIG)}'
-        self._decrate = self._get(_DEC_RATE)
-        self._null_cnfg = self._get(_NULL_CNFG)
-
-        self._select_page(0x04)
-        self._serial_num = self._get(_SERIAL_NUM)
-
-        self._select_page(0x05)
-        self._fir_coef_A000 = hex(self._get(0x08))
-        self._fir_coef_A001 = hex(self._get(0x0A))
-        self._fir_coef_A002 = hex(self._get(0x0C))
-        self._fir_coef_A059 = hex(self._get(0x7E))
-
-        self._select_page(0x06)
-        self._fir_coef_A060 = hex(self._get(0x08))
-        self._fir_coef_A061 = hex(self._get(0x0A))
-        self._fir_coef_A062 = hex(self._get(0x0C))
-        self._fir_coef_A119 = hex(self._get(0x7E))
-
-        self._select_page(0x07)
-        self._fir_coef_B000 = hex(self._get(0x08))
-        self._fir_coef_B001 = hex(self._get(0x0A))
-        self._fir_coef_B002 = hex(self._get(0x0C))
-        self._fir_coef_B059 = hex(self._get(0x7E))
-
-        self._select_page(0x08)
-        self._fir_coef_B060 = hex(self._get(0x08))
-        self._fir_coef_B061 = hex(self._get(0x0A))
-        self._fir_coef_B062 = hex(self._get(0x0C))
-        self._fir_coef_B119 = hex(self._get(0x7E))
-
-        self._select_page(0x09)
-        self._fir_coef_C000 = hex(self._get(0x08))
-        self._fir_coef_C001 = hex(self._get(0x0A))
-        self._fir_coef_C002 = hex(self._get(0x0C))
-        self._fir_coef_C059 = hex(self._get(0x7E))
-
-        self._select_page(0x0A)
-        self._fir_coef_C060 = hex(self._get(0x08))
-        self._fir_coef_C061 = hex(self._get(0x0A))
-        self._fir_coef_C062 = hex(self._get(0x0C))
-        self._fir_coef_C119 = hex(self._get(0x7E))
-
-        self._select_page(0x0B)
-        self._fir_coef_D000 = hex(self._get(0x08))
-        self._fir_coef_D001 = hex(self._get(0x0A))
-        self._fir_coef_D002 = hex(self._get(0x0C))
-        self._fir_coef_D059 = hex(self._get(0x7E))
-
-        self._select_page(0x0C)
-        self._fir_coef_D060 = hex(self._get(0x08))
-        self._fir_coef_D061 = hex(self._get(0x0A))
-        self._fir_coef_D062 = hex(self._get(0x0C))
-        self._fir_coef_D119 = hex(self._get(0x7E))
-
-        dic = [[self._prod_id, self._serial_num, self._decrate, self._config, self._x_gyro_bias,
-                self._y_gyro_bias, self._z_gyro_bias, self._x_gyro_scale, self._y_gyro_scale, self._z_gyro_scale],
-               [self._fir_coef_A000, self._fir_coef_A001, self._fir_coef_A002, self._fir_coef_A059,
-                self._fir_coef_A060, self._fir_coef_A061, self._fir_coef_A062, self._fir_coef_A119],
-               [self._fir_coef_B000, self._fir_coef_B001, self._fir_coef_B002, self._fir_coef_B059,
-                self._fir_coef_B060, self._fir_coef_B061, self._fir_coef_B062, self._fir_coef_B119],
-               [self._fir_coef_C000, self._fir_coef_C001, self._fir_coef_C002, self._fir_coef_C059,
-                self._fir_coef_C060, self._fir_coef_C061, self._fir_coef_C062, self._fir_coef_C119],
-               [self._fir_coef_D000, self._fir_coef_D001, self._fir_coef_D002, self._fir_coef_D059,
-                self._fir_coef_D060, self._fir_coef_D061, self._fir_coef_D062, self._fir_coef_D119]]
-        return dic
+        rxData = spi.xfer(txData)
+        row = [self._sys_e_flag, self._temp_out, self._x_gyro, self._y_gyro, 
+        self._z_gyro, self._x_accl, self._y_accl, self._z_accl]
+        return row
+      
+      
+    @property
+    def cleanup(self):
+        spi.close()
+        GPIO.cleanup()
