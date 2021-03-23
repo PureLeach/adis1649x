@@ -12,8 +12,9 @@ Functions:
     _spi_write(object, int, int)
 
 """
-
+import time
 from enum import Enum
+import atexit
 import spidev
 import RPi.GPIO as GPIO
 
@@ -98,6 +99,8 @@ _FIRM_REV = 0x78
 _FIRM_DM = 0x7A
 _FIRM_Y = 0x7C
 _BOOT_REV = 0x7E
+# autocalib_pause = [0.02, 0.04, 0.07, 0.2, 0.3, 0.5, 1, 2, 4, 8, 16, 31, 62, 124]
+autocalib_pause = [1, 1, 1, 1, 1, 1, 2, 3, 8, 10, 20, 40, 70, 130]
 
 # PAGE 0x04
 _CAL_SIGTR_LWR = 0x04
@@ -180,13 +183,16 @@ class Adis1649x:
 
     # добавить проверку на ошибки
     def __init__(self, prod_id=16490):
+        global current_page
         """Checking the sensor ID"""
         _spi_write(spi, _PAGE_ID, 0x00)
+        current_page = 0
         GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         adis_prod_id = _spi_read(spi, _PROD_ID)
         if adis_prod_id != prod_id:
             raise RuntimeError(
                 f"Failed to find ADIS {prod_id}! Chip ID {adis_prod_id}")
+        
 
     def _get(self, reg):
         """We wait for the Interrupt request signal and send the data to the external read function
@@ -203,7 +209,7 @@ class Adis1649x:
 
     def _set(self, reg, value):
         """Sending data to an external recording function"""
-        # GPIO.wait_for_edge(IRQ, GPIO.FALLING)
+        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         _spi_write(spi, reg, value)
 
     def _select_page(self, page):
@@ -212,8 +218,12 @@ class Adis1649x:
         Args:
             page ([int]): The number of the page to switch to
         """
-        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
-        _spi_write(spi, _PAGE_ID, page)
+        global current_page
+        if current_page != page:
+            _spi_write(spi, _PAGE_ID, page)
+            current_page = page
+        
+
 
     def _comb_16_into_32(self, high, low):
         """A method for combining 16 bit numbers into 32 bits by shifting the highest bits to the left and the logical sum
@@ -259,6 +269,15 @@ class Adis1649x:
         if((value & (1 << (bits-1))) != 0):
             value = value - (1 << bits)
         return value
+
+    @property
+    def serial_num(self):
+        self._select_page(0x04)
+        self.serial_number = self._get(_SERIAL_NUM)
+        return self.serial_number
+
+
+    ###SERIAL_NUM = _spi_read(spi, _SERIAL_NUM)
 
     @property
     def temp(self):
@@ -439,8 +458,12 @@ class Adis1649x:
             z_gyro_low_senior, z_gyro_low_junior, z_gyro_high_senior, z_gyro_high_junior)
         self.z_gyro_32 = self._check(
             self.z_gyro_32, 32)
-
-        return self.z_accl_32 * 0.5 / 65536
+        
+        self.dic = [(self.x_gyro_32 * 0.005 / 65536), (self.y_gyro_32 * 0.005 / 65536), (self.z_gyro_32 * 0.005 / 65536)]
+        # self.dic = {'X_GYRO (32 bit)': (self.x_gyro_32 * 0.005 / 65536), 
+        #             'Y_GYRO (32 bit)': (self.y_gyro_32 * 0.005 / 65536),
+        #             'Z_GYRO (32 bit)': (self.z_gyro_32 * 0.005 / 65536)  } 
+        return self.dic
 
     # не доделал
     # Чтение трёх осей акселерометра
@@ -514,7 +537,7 @@ class Adis1649x:
         if not (isinstance(sensor_type, SensorType) or isinstance(axis, Axis) or isinstance(value, (int, float))):
             raise TypeError("Invalid data type entered")
         if not (-1 <= value <= 1):
-            raise ValueError("Вышли за пределы допустимого интервала")
+            raise ValueError("The value is out of the allowed range")
         self._scale_value = value
         self._scale_low, self._scale_high = self._scale(self._scale_value)
         self._select_page(0x02)
@@ -721,6 +744,25 @@ class Adis1649x:
         self._set(_CONFIG, value)
         self._set(_CONFIG + 1, 0x00)
 
+    
+    def autocalibration(self, tbc):
+        """[3:0] Time base control (TBC), range: 0 to 13 (default = 10);
+        tB = 2TBC/4250, time base; tA = 64 × tB, average time 
+
+        Args:
+            tbc ([type]): [description]
+        """
+        if not isinstance(tbc, int):
+            raise TypeError("TBC must be type int")
+        if not (0 <= tbc <= 13):
+            raise ValueError("The value is out of the allowed range")
+        self._select_page(0x03)
+        self._set(_NULL_CNFG, tbc) 
+        self._set(_NULL_CNFG+1, 0b00000111) 
+        time.sleep(autocalib_pause[tbc])
+        self._set(_GLOB_CMD, 0b00000001)
+        self._set(_GLOB_CMD+1, 0x00)
+
     @property
     def reset(self):
         """Reset settings"""
@@ -749,8 +791,40 @@ class Adis1649x:
         self._z_gyro, self._x_accl, self._y_accl, self._z_accl]
         return row
       
-      
-    @property
-    def cleanup(self):
+    # @property
+    # def cleanup():
+    #     print('Запуск cleanup')
+    #     spi.close()
+    #     GPIO.cleanup()
+    
+
+    @atexit.register
+    def cleanup():
+        print('Запуск cleanup')
         spi.close()
         GPIO.cleanup()
+
+# sensor = Adis1649x(16490)
+# # h = sensor.serial_num
+# # print(h)
+# sensor.reset
+# # sensor.autocalibration(8)
+# # time.sleep(2)
+# # # sensor.bias_set(SensorType.gyro, Axis.x, 2.1)
+# x = sensor.bias_get(SensorType.gyro, Axis.x)
+# y = sensor.bias_get(SensorType.gyro, Axis.y)
+# z = sensor.bias_get(SensorType.gyro, Axis.z)
+# print(x)
+# print(y)
+# print(z)
+
+
+
+# sensor
+# # x  = sensor.x_gyro
+# n = 0
+# while n < 100:
+#     n += 1
+#     x = sensor.gyro_axes
+#     print(x)
+# sensor.cleanup
