@@ -19,6 +19,11 @@ import spidev
 import RPi.GPIO as GPIO
 
 
+#Scale Factors [Gyroscope, Accelerometer, Thermometer]
+coefficient_adis16490 = [0.005, 0.5, 0.01429]
+coefficient_adis16495 = [0.00625, 0.25, 0.0125]
+# coefficient_adis16495-2 = [0.025, 0.25]
+
 # ADIS 16490 USER REGISTER MEMORY MAP
 _PAGE_ID = 0x00  # Same for all pages
 
@@ -180,9 +185,8 @@ class Adis1649x:
         ValueError: The method gets an argument of the correct type, but an incorrect value
     """
 
-    # добавить проверку на ошибки
     def __init__(self, prod_id=16490):
-        global current_page
+        global current_page, gyro_scale, accl_scale, temp_scale
         """Checking the sensor ID"""
         _spi_write(spi, _PAGE_ID, 0x00)
         current_page = 0
@@ -191,7 +195,15 @@ class Adis1649x:
         if adis_prod_id != prod_id:
             raise RuntimeError(
                 f"Failed to find ADIS {prod_id}! Chip ID {adis_prod_id}")
-        
+        if prod_id == 16490:
+            scale_factors = coefficient_adis16490   
+        elif prod_id == 16495:
+            scale_factors = coefficient_adis16495   
+
+        gyro_scale = scale_factors[0]
+        accl_scale = scale_factors[1]
+        temp_scale = scale_factors[2]
+
 
     def _get(self, reg):
         """We wait for the Interrupt request signal and send the data to the external read function
@@ -290,7 +302,7 @@ class Adis1649x:
         self._select_page(0x00)
         temp_raw = self._get(_TEMP_OUT)
         temp_raw = self._check(temp_raw, 16)
-        return 0.01429 * temp_raw + 25
+        return temp_scale * temp_raw + 25
 
     @property
     def decrate(self):
@@ -338,7 +350,7 @@ class Adis1649x:
             self.x_gyro_out, self.x_gyro_low)
         self.x_gyro_32 = self._check(
             self.x_gyro_32, 32)
-        return self.x_gyro_32 * 0.005 / 65536
+        return self.x_gyro_32 * gyro_scale / 65536
 
     @property
     def x_accl(self):
@@ -354,7 +366,7 @@ class Adis1649x:
             self.x_accl_out, self.x_accl_low)
         self.x_accl_32 = self._check(
             self.x_accl_32, 32)
-        return self.x_accl_32 * 0.5 / 65536
+        return self.x_accl_32 * accl_scale / 65536
 
     @property
     def y_gyro(self):
@@ -370,7 +382,7 @@ class Adis1649x:
             self.y_gyro_out, self.y_gyro_low)
         self.y_gyro_32 = self._check(
             self.y_gyro_32, 32)
-        return self.y_gyro_32 * 0.005 / 65536
+        return self.y_gyro_32 * gyro_scale / 65536
 
     @property
     def y_accl(self):
@@ -386,7 +398,7 @@ class Adis1649x:
             self.y_accl_out, self.y_accl_low)
         self.y_accl_32 = self._check(
             self.y_accl_32, 32)
-        return self.y_accl_32 * 0.5 / 65536
+        return self.y_accl_32 * accl_scale / 65536
 
     @property
     def z_gyro(self):
@@ -402,7 +414,7 @@ class Adis1649x:
             self.z_gyro_out, self.z_gyro_low)
         self.z_gyro_32 = self._check(
             self.z_gyro_32, 32)
-        return self.z_gyro_32 * 0.005 / 65536
+        return self.z_gyro_32 * gyro_scale / 65536
 
     @property
     def z_accl(self):
@@ -418,7 +430,7 @@ class Adis1649x:
             self.z_accl_out, self.z_accl_low)
         self.z_accl_32 = self._check(
             self.z_accl_32, 32)
-        return self.z_accl_32 * 0.5 / 65536
+        return self.z_accl_32 * accl_scale / 65536
 
     @property
     def gyro_axes(self):
@@ -457,7 +469,7 @@ class Adis1649x:
         self.z_gyro_32 = self._check(
             self.z_gyro_32, 32)
         
-        self.gyro_list = [(self.x_gyro_32 * 0.005 / 65536), (self.y_gyro_32 * 0.005 / 65536), (self.z_gyro_32 * 0.005 / 65536)]
+        self.gyro_list = [(self.x_gyro_32 * gyro_scale / 65536), (self.y_gyro_32 * gyro_scale / 65536), (self.z_gyro_32 * gyro_scale / 65536)]
         return self.gyro_list
 
     # не доделал
@@ -497,7 +509,7 @@ class Adis1649x:
         self.z_accl_32 = self._check(
             self.z_accl_32, 32)
         
-        self.accl_list = [(self.x_accl_32 * 0.5 / 65536), (self.y_accl_32 * 0.5 / 65536), (self.z_accl_32 * 0.5 / 65536)]
+        self.accl_list = [(self.x_accl_32 * accl_scale / 65536), (self.y_accl_32 * accl_scale / 65536), (self.z_accl_32 * accl_scale / 65536)]
         return self.accl_list
 
 
@@ -649,7 +661,7 @@ class Adis1649x:
         self._scale_value = value
         if sensor_type == SensorType.gyro:
             self._bias_low1, self._bias_low2, self._bias_high1, self._bias_high2 = self._bias(
-                value, 0.005/65536, 32)
+                value, gyro_scale/65536, 32)
             if axis == Axis.x:
                 self._set(_XG_BIAS_LOW, self._bias_low1)
                 self._set(_XG_BIAS_LOW + 1, self._bias_low2)
@@ -667,7 +679,7 @@ class Adis1649x:
                 self._set(_ZG_BIAS_HIGH + 1, self._bias_high2)
         elif sensor_type == SensorType.accl:
             self._bias_low1, self._bias_low2, self._bias_high1, self._bias_high2 = self._bias(
-                value, 0.5/65536, 32)
+                value, accl_scale/65536, 32)
             if axis == Axis.x:
                 self._set(_XA_BIAS_LOW, self._bias_low1)
                 self._set(_XA_BIAS_LOW + 1, self._bias_low2)
@@ -708,21 +720,21 @@ class Adis1649x:
                 self.xg_bias_32 = self._comb_16_into_32(
                     self.xg_bias_high, self.xg_bias_low)
                 self.xg_bias_32 = self._check(self.xg_bias_32, 32)
-                return self.xg_bias_32 * 0.005 / 65536
+                return self.xg_bias_32 * gyro_scale / 65536
             elif axis == Axis.y:
                 self.yg_bias_low = self._get(_YG_BIAS_LOW)
                 self.yg_bias_high = self._get(_YG_BIAS_HIGH)
                 self.yg_bias_32 = self._comb_16_into_32(
                     self.yg_bias_high, self.yg_bias_low)
                 self.yg_bias_32 = self._check(self.yg_bias_32, 32)
-                return self.yg_bias_32 * 0.005 / 65536
+                return self.yg_bias_32 * gyro_scale / 65536
             elif axis == Axis.z:
                 self.zg_bias_low = self._get(_ZG_BIAS_LOW)
                 self.zg_bias_high = self._get(_ZG_BIAS_HIGH)
                 self.zg_bias_32 = self._comb_16_into_32(
                     self.zg_bias_high, self.zg_bias_low)
                 self.zg_bias_32 = self._check(self.zg_bias_32, 32)
-                return self.zg_bias_32 * 0.005 / 65536
+                return self.zg_bias_32 * gyro_scale / 65536
         elif sensor_type == SensorType.accl:
             if axis == Axis.x:
                 self.xa_bias_low = self._get(_XA_BIAS_LOW)
@@ -730,21 +742,21 @@ class Adis1649x:
                 self.xa_bias_32 = self._comb_16_into_32(
                     self.xa_bias_high, self.xa_bias_low)
                 self.xa_bias_32 = self._check(self.xa_bias_32, 32)
-                return self.xa_bias_32 * 0.5 / 65536
+                return self.xa_bias_32 * accl_scale / 65536
             elif axis == Axis.y:
                 self.ya_bias_low = self._get(_YA_BIAS_LOW)
                 self.ya_bias_high = self._get(_YA_BIAS_HIGH)
                 self.ya_bias_32 = self._comb_16_into_32(
                     self.ya_bias_high, self.ya_bias_low)
                 self.ya_bias_32 = self._check(self.ya_bias_32, 32)
-                return self.ya_bias_32 * 0.5 / 65536
+                return self.ya_bias_32 * accl_scale / 65536
             elif axis == Axis.z:
                 self.za_bias_low = self._get(_ZA_BIAS_LOW)
                 self.za_bias_high = self._get(_ZA_BIAS_HIGH)
                 self.za_bias_32 = self._comb_16_into_32(
                     self.za_bias_high, self.za_bias_low)
                 self.za_bias_32 = self._check(self.za_bias_32, 32)
-                return self.za_bias_32 * 0.5 / 65536
+                return self.za_bias_32 * accl_scale / 65536
 
     @property
     def config(self):
@@ -828,6 +840,6 @@ class Adis1649x:
         GPIO.cleanup()
 
 
-# sensor = Adis1649x()
+# sensor = Adis1649x(16490)
 # x = sensor.accl_axes
 # print(x)
