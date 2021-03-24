@@ -113,7 +113,6 @@ _CODE_DRVTN_LWR = 0x10
 _CODE_DRVTN_UPR = 0x12
 _SERIAL_NUM = 0x20
 
-
 IRQ = 6  # GPIO connect to Interrupt request
 CS = 8  # GPIO connect to chip select
 spi = spidev.SpiDev()  # Creating an SPI object
@@ -421,7 +420,6 @@ class Adis1649x:
             self.z_accl_32, 32)
         return self.z_accl_32 * 0.5 / 65536
 
-# не доделано!
     @property
     def gyro_axes(self):
         """Simultaneous reading of three gyroscope axes
@@ -459,18 +457,49 @@ class Adis1649x:
         self.z_gyro_32 = self._check(
             self.z_gyro_32, 32)
         
-        self.dic = [(self.x_gyro_32 * 0.005 / 65536), (self.y_gyro_32 * 0.005 / 65536), (self.z_gyro_32 * 0.005 / 65536)]
-        # self.dic = {'X_GYRO (32 bit)': (self.x_gyro_32 * 0.005 / 65536), 
-        #             'Y_GYRO (32 bit)': (self.y_gyro_32 * 0.005 / 65536),
-        #             'Z_GYRO (32 bit)': (self.z_gyro_32 * 0.005 / 65536)  } 
-        return self.dic
+        self.gyro_list = [(self.x_gyro_32 * 0.005 / 65536), (self.y_gyro_32 * 0.005 / 65536), (self.z_gyro_32 * 0.005 / 65536)]
+        return self.gyro_list
 
     # не доделал
     # Чтение трёх осей акселерометра
     @property
     def accl_axes(self):
-        pass
-        return self.z_accl_32 * 0.5 / 65536
+        """Simultaneous reading of three accelerometer axes
+
+        Returns:
+            [list]: List of accelerometer values [X-Axis, Y-Axis, Z-Axis]
+        """
+        self._select_page(0x00)
+        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
+        accl_row = spi.xfer3(_ACCL_ROW)
+        x_accl_low_senior = accl_row[4]
+        x_accl_low_junior = accl_row[5]
+        x_accl_high_senior = accl_row[6]
+        x_accl_high_junior = accl_row[7]
+        self.x_accl_32 = self._comb_8_into_32(
+            x_accl_low_senior, x_accl_low_junior, x_accl_high_senior, x_accl_high_junior)
+        self.x_accl_32 = self._check(
+            self.x_accl_32, 32)
+        y_accl_low_senior = accl_row[8]
+        y_accl_low_junior = accl_row[9]
+        y_accl_high_senior = accl_row[10]
+        y_accl_high_junior = accl_row[11]
+        self.y_accl_32 = self._comb_8_into_32(
+            y_accl_low_senior, y_accl_low_junior, y_accl_high_senior, y_accl_high_junior)
+        self.y_accl_32 = self._check(
+            self.y_accl_32, 32)
+        z_accl_low_senior = accl_row[12]
+        z_accl_low_junior = accl_row[13]
+        z_accl_high_senior = accl_row[14]
+        z_accl_high_junior = accl_row[15]
+        self.z_accl_32 = self._comb_8_into_32(
+            z_accl_low_senior, z_accl_low_junior, z_accl_high_senior, z_accl_high_junior)
+        self.z_accl_32 = self._check(
+            self.z_accl_32, 32)
+        
+        self.accl_list = [(self.x_accl_32 * 0.5 / 65536), (self.y_accl_32 * 0.5 / 65536), (self.z_accl_32 * 0.5 / 65536)]
+        return self.accl_list
+
 
     def _scale(self, value):
         """Convert the entered 32 bit scale value to two 8 bit numbers
@@ -746,11 +775,11 @@ class Adis1649x:
 
     
     def autocalibration(self, tbc):
-        """[3:0] Time base control (TBC), range: 0 to 13 (default = 10);
-        tB = 2TBC/4250, time base; tA = 64 × tB, average time 
+        """Auto bias estimation
 
         Args:
-            tbc ([type]): [description]
+            tbc ([int]): [3:0] Time base control (TBC), range: 0 to 13 (default = 10);
+        tB = 2TBC/4250, time base; tA = 64 × tB, average time 
         """
         if not isinstance(tbc, int):
             raise TypeError("TBC must be type int")
@@ -791,40 +820,14 @@ class Adis1649x:
         self._z_gyro, self._x_accl, self._y_accl, self._z_accl]
         return row
       
-    # @property
-    # def cleanup():
-    #     print('Запуск cleanup')
-    #     spi.close()
-    #     GPIO.cleanup()
-    
-
     @atexit.register
     def cleanup():
-        print('Запуск cleanup')
+        """The function is automatically executed after the interpreter finishes
+        """
         spi.close()
         GPIO.cleanup()
 
-# sensor = Adis1649x(16490)
-# # h = sensor.serial_num
-# # print(h)
-# sensor.reset
-# # sensor.autocalibration(8)
-# # time.sleep(2)
-# # # sensor.bias_set(SensorType.gyro, Axis.x, 2.1)
-# x = sensor.bias_get(SensorType.gyro, Axis.x)
-# y = sensor.bias_get(SensorType.gyro, Axis.y)
-# z = sensor.bias_get(SensorType.gyro, Axis.z)
+
+# sensor = Adis1649x()
+# x = sensor.accl_axes
 # print(x)
-# print(y)
-# print(z)
-
-
-
-# sensor
-# # x  = sensor.x_gyro
-# n = 0
-# while n < 100:
-#     n += 1
-#     x = sensor.gyro_axes
-#     print(x)
-# sensor.cleanup
