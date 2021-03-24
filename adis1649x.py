@@ -19,7 +19,7 @@ import spidev
 import RPi.GPIO as GPIO
 
 
-#Scale Factors [Gyroscope, Accelerometer, Thermometer]
+# Scale Factors [Gyroscope, Accelerometer, Thermometer]
 coefficient_adis16490 = [0.005, 0.5, 0.01429]
 coefficient_adis16495 = [0.00625, 0.25, 0.0125]
 # coefficient_adis16495-2 = [0.025, 0.25]
@@ -130,39 +130,6 @@ GPIO.setup(CS, GPIO.OUT)  # Chip select
 GPIO.output(CS, GPIO.HIGH)  # Setting the CS signal level to high
 
 
-def _spi_read(spi, reg):
-    """SPI bus data reading function
-
-    Args:
-        spi ([object]): Created SpiDev object
-        reg ([int]): The number of the register to read
-
-    Returns:
-       resp [int]: Output value
-    """
-
-    send = [0]*2  
-    send[0] = reg
-    spi.writebytes(send)  # Sending bytes over the SPI bus
-    resp = spi.readbytes(2)  # We read 2 bytes over the SPI bus. As a result, we get a list of two values [x1, x2]
-    resp = ((resp[0] << 8) | resp[1])  # Converting a value to 16-bit
-    return resp
-
-
-def _spi_write(spi, reg, value):
-    """Function that records data over the SPI bus
-
-    Args:
-        spi ([object]): Created SpiDev object
-        reg ([int]): The number of the register to write the data to
-        value ([int]): Value to write to a register
-    """
-    send = [0]*2
-    send[0] = 0x80 | reg # Specify the highest bit for the record (OR 0x80) 
-    send[1] = value  
-    spi.writebytes(send)  # Sending bytes over the SPI bus
-
-
 class SensorType(Enum):
     """Sensor Type Enumeration class"""
     gyro = 'gyro'
@@ -178,7 +145,7 @@ class Axis(Enum):
 
 class Adis1649x:
     """The class of the ADIS 1649x sensor that implements an interface for interacting with it
-        
+
     Raises:
         AttributeError: Occurs if the read id does not match the sensor id
         TypeError: A variable of the wrong type was entered
@@ -188,40 +155,52 @@ class Adis1649x:
     def __init__(self, prod_id=16490):
         global current_page, gyro_scale, accl_scale, temp_scale
         """Checking the sensor ID"""
-        _spi_write(spi, _PAGE_ID, 0x00)
+        self._set(_PAGE_ID, 0x00)
         current_page = 0
-        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
-        adis_prod_id = _spi_read(spi, _PROD_ID)
+        adis_prod_id = self._get(_PROD_ID)
         if adis_prod_id != prod_id:
             raise RuntimeError(
                 f"Failed to find ADIS {prod_id}! Chip ID {adis_prod_id}")
         if prod_id == 16490:
-            scale_factors = coefficient_adis16490   
+            scale_factors = coefficient_adis16490
         elif prod_id == 16495:
-            scale_factors = coefficient_adis16495   
+            scale_factors = coefficient_adis16495
 
         gyro_scale = scale_factors[0]
         accl_scale = scale_factors[1]
         temp_scale = scale_factors[2]
 
-
     def _get(self, reg):
-        """We wait for the Interrupt request signal and send the data to the external read function
+        """SPI bus data reading function
 
         Args:
             reg ([int]): The number of the register to read
 
         Returns:
-            [int]: Received response
+            self.value [int]: Output value
         """
         GPIO.wait_for_edge(IRQ, GPIO.FALLING)
-        self.value = _spi_read(spi, reg)
+        spi.writebytes([reg, 0])  # Sending bytes over the SPI bus
+        # We read 2 bytes over the SPI bus. As a result, we get a list of two values [x1, x2]
+        value = spi.readbytes(2)
+        # Converting a value to 16-bit
+        self.value = ((value[0] << 8) | value[1])
         return self.value
 
     def _set(self, reg, value):
-        """Sending data to an external recording function"""
+        """Function that records data over the SPI bus
+
+        Args:
+            spi ([object]): Created SpiDev object
+            reg ([int]): The number of the register to write the data to
+            value ([int]): Value to write to a register
+        """
         GPIO.wait_for_edge(IRQ, GPIO.FALLING)
-        _spi_write(spi, reg, value)
+        send = [0]*2
+        # Specify the highest bit for the record (OR 0x80)
+        send[0] = 0x80 | reg
+        send[1] = value
+        spi.writebytes(send)  # Sending bytes over the SPI bus
 
     def _select_page(self, page):
         """Method for switching the register page
@@ -231,10 +210,8 @@ class Adis1649x:
         """
         global current_page
         if current_page != page:
-            _spi_write(spi, _PAGE_ID, page)
+            self._set(_PAGE_ID, page)
             current_page = page
-        
-
 
     def _comb_16_into_32(self, high, low):
         """A method for combining 16 bit numbers into 32 bits by shifting the highest bits to the left and the logical sum
@@ -261,8 +238,8 @@ class Adis1649x:
         Returns:
             [int]: 32 bit number
         """
-        low16 = ((low_senior << 8) | low_junior)  
-        high16 = ((high_senior << 8) | high_junior)  
+        low16 = ((low_senior << 8) | low_junior)
+        high16 = ((high_senior << 8) | high_junior)
         bit32 = ((high16 << 16) | (low16 & 0xFFFF))
         return bit32
 
@@ -286,9 +263,6 @@ class Adis1649x:
         self._select_page(0x04)
         self.serial_number = self._get(_SERIAL_NUM)
         return self.serial_number
-
-
-    ###SERIAL_NUM = _spi_read(spi, _SERIAL_NUM)
 
     @property
     def temp(self):
@@ -468,8 +442,9 @@ class Adis1649x:
             z_gyro_low_senior, z_gyro_low_junior, z_gyro_high_senior, z_gyro_high_junior)
         self.z_gyro_32 = self._check(
             self.z_gyro_32, 32)
-        
-        self.gyro_list = [(self.x_gyro_32 * gyro_scale / 65536), (self.y_gyro_32 * gyro_scale / 65536), (self.z_gyro_32 * gyro_scale / 65536)]
+
+        self.gyro_list = [(self.x_gyro_32 * gyro_scale / 65536), (self.y_gyro_32 *
+                                                                  gyro_scale / 65536), (self.z_gyro_32 * gyro_scale / 65536)]
         return self.gyro_list
 
     # не доделал
@@ -508,10 +483,10 @@ class Adis1649x:
             z_accl_low_senior, z_accl_low_junior, z_accl_high_senior, z_accl_high_junior)
         self.z_accl_32 = self._check(
             self.z_accl_32, 32)
-        
-        self.accl_list = [(self.x_accl_32 * accl_scale / 65536), (self.y_accl_32 * accl_scale / 65536), (self.z_accl_32 * accl_scale / 65536)]
-        return self.accl_list
 
+        self.accl_list = [(self.x_accl_32 * accl_scale / 65536), (self.y_accl_32 *
+                                                                  accl_scale / 65536), (self.z_accl_32 * accl_scale / 65536)]
+        return self.accl_list
 
     def _scale(self, value):
         """Convert the entered 32 bit scale value to two 8 bit numbers
@@ -548,16 +523,16 @@ class Adis1649x:
         Returns:
             [int]: four 8 bit values
         """
-        value = value / coefficient  
-        value = int(round(value))  
-        if(value < 0):  
+        value = value / coefficient
+        value = int(round(value))
+        if(value < 0):
             value = value + (1 << bits)
         self._bias_low = value & 0xFFFF
         self._bias_high = (value >> 16) & 0xFFFF
-        self._bias_low1 = self._bias_low & 0xff  
+        self._bias_low1 = self._bias_low & 0xff
         self._bias_low2 = (self._bias_low >> 8) & 0xff
-        self._bias_high1 = self._bias_high & 0xff  
-        self._bias_high2 = (self._bias_high >> 8) & 0xff  
+        self._bias_high1 = self._bias_high & 0xff
+        self._bias_high2 = (self._bias_high >> 8) & 0xff
         return self._bias_low1, self._bias_low2, self._bias_high1, self._bias_high2
 
     def scale_set(self, sensor_type, axis, value):
@@ -780,26 +755,25 @@ class Adis1649x:
             TypeError: The error occurs when the input value is not int
         """
         if not isinstance(value, int):
-            raise TypeError("Сonfig type must be int") 
+            raise TypeError("Сonfig type must be int")
         self._select_page(0x03)
         self._set(_CONFIG, value)
         self._set(_CONFIG + 1, 0x00)
 
-    
     def autocalibration(self, tbc):
         """Auto bias estimation
 
         Args:
             tbc ([int]): [3:0] Time base control (TBC), range: 0 to 13 (default = 10);
-        tB = 2TBC/4250, time base; tA = 64 × tB, average time 
+        tB = 2TBC/4250, time base; tA = 64 × tB, average time
         """
         if not isinstance(tbc, int):
             raise TypeError("TBC must be type int")
         if not (0 <= tbc <= 13):
             raise ValueError("The value is out of the allowed range")
         self._select_page(0x03)
-        self._set(_NULL_CNFG, tbc) 
-        self._set(_NULL_CNFG+1, 0b00000111) 
+        self._set(_NULL_CNFG, tbc)
+        self._set(_NULL_CNFG+1, 0b00000111)
         time.sleep(autocalib_pause[tbc])
         self._set(_GLOB_CMD, 0b00000001)
         self._set(_GLOB_CMD+1, 0x00)
@@ -820,18 +794,18 @@ class Adis1649x:
         """The burst read function provides a method for reading a batch of data
         (status, temperature, gyroscopes, accelerometers, time stamp/data counter, and CRC code),
         which does not require a stall time between each 16-bit segment and only requires one
-        command on the DIN line to initiate.  
-        
+        command on the DIN line to initiate.
+
         Not supported by the sensor ADIS16490!
         """
         txData = [0x7C, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         self._select_page(0x00)
         rxData = spi.xfer(txData)
-        row = [self._sys_e_flag, self._temp_out, self._x_gyro, self._y_gyro, 
-        self._z_gyro, self._x_accl, self._y_accl, self._z_accl]
+        row = [self._sys_e_flag, self._temp_out, self._x_gyro, self._y_gyro,
+               self._z_gyro, self._x_accl, self._y_accl, self._z_accl]
         return row
-      
+
     @atexit.register
     def cleanup():
         """The function is automatically executed after the interpreter finishes
