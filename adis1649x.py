@@ -5,12 +5,6 @@ Classes:
     SensorType
     Axis
     Adis1649x
-
-Functions:
-
-    _spi_read (object, int) -> int
-    _spi_write(object, int, int)
-
 """
 import time
 from enum import Enum
@@ -60,7 +54,8 @@ _Z_DELTVEL_OUT = 0x56
 _PROD_ID = 0x7E
 _GYRO_ROW = [0x10, 0, 0x12, 0, 0x14, 0, 0x16, 0, 0x18, 0, 0x1A, 0, 0, 0, 0, 0]
 _ACCL_ROW = [0x1C, 0, 0x1E, 0, 0x20, 0, 0x22, 0, 0x24, 0, 0x26, 0, 0, 0, 0, 0]
-
+_BURST_READ = [0x7C, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 # PAGE 0x01 Reserved
 
@@ -122,7 +117,7 @@ IRQ = 6  # GPIO connect to Interrupt request
 CS = 8  # GPIO connect to chip select
 spi = spidev.SpiDev()  # Creating an SPI object
 spi.open(0, 0)  # Selecting the port number and device number (CS) of the SPI bus
-spi.max_speed_hz = 8000000  # Setting the maximum speed of the SPI bus
+spi.max_speed_hz = 7000000  # Setting the maximum speed of the SPI bus
 spi.mode = 3  # Selecting the SPI operation mode (from 0 to 3)
 GPIO.setmode(GPIO.BCM)  # Selecting the GPIO pin numbering mode
 GPIO.setup(IRQ, GPIO.IN)  # Interrupt request
@@ -179,7 +174,6 @@ class Adis1649x:
         Returns:
             self.value [int]: Output value
         """
-        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         spi.writebytes([reg, 0])  # Sending bytes over the SPI bus
         # We read 2 bytes over the SPI bus. As a result, we get a list of two values [x1, x2]
         value = spi.readbytes(2)
@@ -212,6 +206,19 @@ class Adis1649x:
         if current_page != page:
             self._set(_PAGE_ID, page)
             current_page = page
+
+    def _comb_8_into_16(self, high, low):
+        """A method for combining 8 bit numbers into 16 bits by shifting the highest bits to the left and the logical sum
+
+        Args:
+            high ([int]): High 8 bits
+            low ([int]): Low 8 bits
+
+        Returns:
+            [int]: 16 bit number
+        """
+        bit16 = ((high << 8) | (low & 0xFF))
+        return bit16
 
     def _comb_16_into_32(self, high, low):
         """A method for combining 16 bit numbers into 32 bits by shifting the highest bits to the left and the logical sum
@@ -268,12 +275,13 @@ class Adis1649x:
     def temp(self):
         """Output of the temperature value
         Formula for representing a number from a dataset:
-        0.01429 * temp_raw + 25
+        temp_scale * temp_raw + 25
 
         Returns:
             [float]: Converted temperature value
         """
         self._select_page(0x00)
+        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         temp_raw = self._get(_TEMP_OUT)
         temp_raw = self._check(temp_raw, 16)
         return temp_scale * temp_raw + 25
@@ -288,10 +296,10 @@ class Adis1649x:
             [int]: The value of decorate
         """
         self._select_page(0x03)
+        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         self.decrate_ = self._get(_DEC_RATE)
         return self.decrate_
 
-    # Добавить проверку диапазона
     @decrate.setter
     def decrate(self, value):
         """Setter for changing the decorate
@@ -304,6 +312,8 @@ class Adis1649x:
         """
         if not isinstance(value, int):
             raise TypeError("Decrate type must be int")
+        if not (0 <= value <= 4249):
+            raise ValueError("The value is out of the allowed range")
         self._decrate_low = value & 0xff
         self._decrate_high = (value >> 8) & 0xff
         self._select_page(0x03)
@@ -312,12 +322,13 @@ class Adis1649x:
 
     @property
     def x_gyro(self):
-        """Getter for displaying the values of the X-axis gyroscope
+        """Getter for displaying the values of the X-axis
 
         Returns:
-            [float]: Преобразованое значение гироскопа
+            [float]: Converted gyroscope value
         """
         self._select_page(0x00)
+        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         self.x_gyro_low = self._get(_X_GYRO_LOW)
         self.x_gyro_out = self._get(_X_GYRO_OUT)
         self.x_gyro_32 = self._comb_16_into_32(
@@ -334,6 +345,7 @@ class Adis1649x:
             [float]: Converted accelerometer value
         """
         self._select_page(0x00)
+        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         self.x_accl_low = self._get(_X_ACCL_LOW)
         self.x_accl_out = self._get(_X_ACCL_OUT)
         self.x_accl_32 = self._comb_16_into_32(
@@ -350,6 +362,7 @@ class Adis1649x:
             [float]: Converted gyroscope value
         """
         self._select_page(0x00)
+        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         self.y_gyro_low = self._get(_Y_GYRO_LOW)
         self.y_gyro_out = self._get(_Y_GYRO_OUT)
         self.y_gyro_32 = self._comb_16_into_32(
@@ -366,6 +379,7 @@ class Adis1649x:
             [float]: Converted accelerometer value
         """
         self._select_page(0x00)
+        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         self.y_accl_low = self._get(_Y_ACCL_LOW)
         self.y_accl_out = self._get(_Y_ACCL_OUT)
         self.y_accl_32 = self._comb_16_into_32(
@@ -382,6 +396,7 @@ class Adis1649x:
             [float]: Converted gyroscope value
         """
         self._select_page(0x00)
+        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         self.z_gyro_low = self._get(_Z_GYRO_LOW)
         self.z_gyro_out = self._get(_Z_GYRO_OUT)
         self.z_gyro_32 = self._comb_16_into_32(
@@ -398,6 +413,7 @@ class Adis1649x:
             [float]: Converted accelerometer value
         """
         self._select_page(0x00)
+        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         self.z_accl_low = self._get(_Z_ACCL_LOW)
         self.z_accl_out = self._get(_Z_ACCL_OUT)
         self.z_accl_32 = self._comb_16_into_32(
@@ -447,8 +463,6 @@ class Adis1649x:
                                                                   gyro_scale / 65536), (self.z_gyro_32 * gyro_scale / 65536)]
         return self.gyro_list
 
-    # не доделал
-    # Чтение трёх осей акселерометра
     @property
     def accl_axes(self):
         """Simultaneous reading of three accelerometer axes
@@ -595,6 +609,7 @@ class Adis1649x:
         if not (isinstance(sensor_type, SensorType) or isinstance(axis, Axis)):
             raise TypeError("Invalid data type entered")
         self._select_page(0x02)
+        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         if sensor_type == SensorType.gyro:
             if axis == Axis.x:
                 self.scale_out = self._get(_X_GYRO_SCALE)
@@ -688,6 +703,7 @@ class Adis1649x:
         if not (isinstance(sensor_type, SensorType) or isinstance(axis, Axis)):
             raise TypeError("Invalid data type entered")
         self._select_page(0x02)
+        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         if sensor_type == SensorType.gyro:
             if axis == Axis.x:
                 self.xg_bias_low = self._get(_XG_BIAS_LOW)
@@ -741,6 +757,7 @@ class Adis1649x:
             [str]: Output of values in binary code
         """
         self._select_page(0x03)
+        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
         self._config = self._get(_CONFIG)
         return f'{self._config:08b}'
 
@@ -798,13 +815,64 @@ class Adis1649x:
 
         Not supported by the sensor ADIS16490!
         """
-        txData = [0x7C, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         self._select_page(0x00)
-        rxData = spi.xfer(txData)
-        row = [self._sys_e_flag, self._temp_out, self._x_gyro, self._y_gyro,
-               self._z_gyro, self._x_accl, self._y_accl, self._z_accl]
-        return row
+        GPIO.wait_for_edge(IRQ, GPIO.FALLING)
+        data_row = spi.xfer3(_BURST_READ)
+        burst_id_high = data_row[4]
+        burst_id_low = data_row[5]
+        self.burst_id = f'{self._comb_8_into_16(burst_id_high, burst_id_low):4X}'
+        sys_e_flag_high = data_row[6]
+        sys_e_flag_low = data_row[7]
+        self.sys_e_flag = f'{self._comb_8_into_16(sys_e_flag_high, sys_e_flag_low):08b}'
+        temp_out_high = data_row[8]
+        temp_out_low = data_row[9]
+        self.temp_out = temp_scale * \
+            self._comb_8_into_16(temp_out_high, temp_out_low) + 25
+        x_gyro_low_senior = data_row[10]
+        x_gyro_low_junior = data_row[11]
+        x_gyro_high_senior = data_row[12]
+        x_gyro_high_junior = data_row[13]
+        x_gyro_32 = self._comb_8_into_32(
+            x_gyro_low_senior, x_gyro_low_junior, x_gyro_high_senior, x_gyro_high_junior)
+        self.x_gyro_32 = self._check(x_gyro_32, 32) * gyro_scale / 65536
+        y_gyro_low_senior = data_row[14]
+        y_gyro_low_junior = data_row[15]
+        y_gyro_high_senior = data_row[16]
+        y_gyro_high_junior = data_row[17]
+        y_gyro_32 = self._comb_8_into_32(
+            y_gyro_low_senior, y_gyro_low_junior, y_gyro_high_senior, y_gyro_high_junior)
+        self.y_gyro_32 = self._check(y_gyro_32, 32) * gyro_scale / 65536
+        z_gyro_low_senior = data_row[18]
+        z_gyro_low_junior = data_row[19]
+        z_gyro_high_senior = data_row[20]
+        z_gyro_high_junior = data_row[21]
+        z_gyro_32 = self._comb_8_into_32(
+            z_gyro_low_senior, z_gyro_low_junior, z_gyro_high_senior, z_gyro_high_junior)
+        self.z_gyro_32 = self._check(z_gyro_32, 32) * gyro_scale / 65536
+        x_accl_low_senior = data_row[22]
+        x_accl_low_junior = data_row[23]
+        x_accl_high_senior = data_row[24]
+        x_accl_high_junior = data_row[25]
+        x_accl_32 = self._comb_8_into_32(
+            x_accl_low_senior, x_accl_low_junior, x_accl_high_senior, x_accl_high_junior)
+        self.x_accl_32 = self._check(x_accl_32, 32) * gyro_scale / 65536
+        y_accl_low_senior = data_row[26]
+        y_accl_low_junior = data_row[27]
+        y_accl_high_senior = data_row[28]
+        y_accl_high_junior = data_row[29]
+        y_accl_32 = self._comb_8_into_32(
+            y_accl_low_senior, y_accl_low_junior, y_accl_high_senior, y_accl_high_junior)
+        self.y_accl_32 = self._check(y_accl_32, 32) * gyro_scale / 65536
+        z_accl_low_senior = data_row[30]
+        z_accl_low_junior = data_row[31]
+        z_accl_high_senior = data_row[32]
+        z_accl_high_junior = data_row[33]
+        z_accl_32 = self._comb_8_into_32(
+            z_accl_low_senior, z_accl_low_junior, z_accl_high_senior, z_accl_high_junior)
+        self.z_accl_32 = self._check(z_accl_32, 32) * gyro_scale / 65536
+        self.burst_row = [self.burst_id, self.sys_e_flag, self.temp_out, self.x_gyro_32, self.y_gyro_32,
+                          self.z_gyro_32, self.x_accl_32, self.y_accl_32, self.z_accl_32]
+        return self.burst_row
 
     @atexit.register
     def cleanup():
@@ -814,6 +882,6 @@ class Adis1649x:
         GPIO.cleanup()
 
 
-# sensor = Adis1649x(16490)
-# x = sensor.accl_axes
+# sensor = Adis1649x(16495)
+# y = sensor.x_gyro
 # print(x)
