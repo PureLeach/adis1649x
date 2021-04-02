@@ -117,7 +117,7 @@ IRQ = 6  # GPIO connect to Interrupt request
 CS = 8  # GPIO connect to chip select
 spi = spidev.SpiDev()  # Creating an SPI object
 spi.open(0, 0)  # Selecting the port number and device number (CS) of the SPI bus
-spi.max_speed_hz = 7000000  # Setting the maximum speed of the SPI bus
+spi.max_speed_hz = 8000000  # Setting the maximum speed of the SPI bus
 spi.mode = 3  # Selecting the SPI operation mode (from 0 to 3)
 GPIO.setmode(GPIO.BCM)  # Selecting the GPIO pin numbering mode
 GPIO.setup(IRQ, GPIO.IN)  # Interrupt request
@@ -152,10 +152,10 @@ class Adis1649x:
         """Checking the sensor ID"""
         self._set(_PAGE_ID, 0x00)
         current_page = 0
-        adis_prod_id = self._get(_PROD_ID)
-        if adis_prod_id != prod_id:
+        self.adis_prod_id = self._get(_PROD_ID)
+        if self.adis_prod_id != prod_id:
             raise RuntimeError(
-                f"Failed to find ADIS {prod_id}! Chip ID {adis_prod_id}")
+                f"Failed to find ADIS {prod_id}! Chip ID {self.adis_prod_id}")
         if prod_id == 16490:
             scale_factors = coefficient_adis16490
         elif prod_id == 16495:
