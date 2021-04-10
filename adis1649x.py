@@ -1,7 +1,6 @@
 """SPI driver for the Analog Devices IMU sensors ADIS1649x.
 
 Classes:
-
     SensorType
     Axis
     Adis1649x
@@ -16,7 +15,9 @@ import RPi.GPIO as GPIO
 # Scale Factors [Gyroscope, Accelerometer, Thermometer]
 coefficient_adis16490 = [0.005, 0.5, 0.01429]
 coefficient_adis16495 = [0.00625, 0.25, 0.0125]
-# coefficient_adis16495-2 = [0.025, 0.25]
+
+autocalib_pause = [0.02, 0.04, 0.07, 0.2,
+                   0.3, 0.5, 1, 2, 4, 8, 16, 31, 62, 124]
 
 # ADIS 16490 USER REGISTER MEMORY MAP
 _PAGE_ID = 0x00  # Same for all pages
@@ -99,8 +100,6 @@ _FIRM_REV = 0x78
 _FIRM_DM = 0x7A
 _FIRM_Y = 0x7C
 _BOOT_REV = 0x7E
-# autocalib_pause = [0.02, 0.04, 0.07, 0.2, 0.3, 0.5, 1, 2, 4, 8, 16, 31, 62, 124]
-autocalib_pause = [1, 1, 1, 1, 1, 1, 2, 3, 8, 10, 20, 40, 70, 130]
 
 # PAGE 0x04
 _CAL_SIGTR_LWR = 0x04
@@ -624,7 +623,7 @@ class Adis1649x:
                 self.scale_out = self._get(_Y_ACCL_SCALE)
             elif axis == Axis.z:
                 self.scale_out = self._get(_Z_ACCL_SCALE)
-        # Масштабируем данные
+        # Scale values
         if self.scale_out <= 32767:
             self.scale_out = (self.scale_out / 32768)
         elif self.scale_out >= 32768:
@@ -880,8 +879,3 @@ class Adis1649x:
         """
         spi.close()
         GPIO.cleanup()
-
-
-# sensor = Adis1649x(16495)
-# y = sensor.x_gyro
-# print(x)
