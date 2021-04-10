@@ -8,7 +8,7 @@ Usage
 
 ### Using the `Adis1649x` object
 
-The `Adis1649x` module provides an object-oriented interface to the sensor,
+The `adis1649x` module provides an object-oriented interface to the sensor,
 making code development more intuitive. An example of its use:
 
 ```python
