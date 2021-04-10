@@ -1,2 +1,2 @@
 # adis16490
-library for working with the ADIS 16490 sensor
+library for working with a ADIS1649x sensors
